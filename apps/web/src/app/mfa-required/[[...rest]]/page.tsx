@@ -37,9 +37,9 @@ export default async function MfaRequiredPage(): Promise<React.ReactElement> {
           </Link>
           <h1 className="text-3xl font-semibold tracking-tight">MFA obrigatório</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Clique em Security no menu à esquerda e ative Authenticator application. Se a seção não
-            aparecer, no Clerk Dashboard ative Multi-factor → Authenticator application (instância
-            Development).
+            Login com Google (ou outro social) já libera o acesso — use “Já ativei” ou entre de novo
+            pelo social. Conta só com e-mail/senha: MFA TOTP exige plano Pro do Clerk; ative em
+            Security → Authenticator application quando disponível.
           </p>
         </div>
 

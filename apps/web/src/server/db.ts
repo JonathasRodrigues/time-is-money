@@ -1,4 +1,4 @@
-import type { AuthSession } from '@tim/auth';
+import { resolveMfaSatisfied, type AuthSession } from '@tim/auth';
 import { createDb, memberships, type Database } from '@tim/db';
 import { DEMO, getDemoSession, isDemoMode } from '@tim/mocks';
 import type { Role } from '@tim/permissions';
@@ -60,14 +60,18 @@ export async function getAuthSession(): Promise<AuthSession | null> {
     null;
 
   const claims = session.sessionClaims as Record<string, unknown> | null;
-  const mfaEnabled =
-    process.env.DEMO_BYPASS_MFA === '1' ||
-    Boolean(claims?.is_mfa ?? claims?.mfa) ||
-    Boolean(backendUser.twoFactorEnabled) ||
-    Boolean(backendUser.totpEnabled) ||
-    Boolean(backendUser.backupCodeEnabled) ||
-    Boolean(cachedUser?.twoFactorEnabled) ||
-    Boolean(cachedUser?.totpEnabled);
+  const socialCount =
+    (backendUser.externalAccounts?.length ?? 0) ||
+    (cachedUser?.verifiedExternalAccounts?.length ?? 0) ||
+    (cachedUser?.externalAccounts?.length ?? 0);
+  const mfaEnabled = resolveMfaSatisfied({
+    bypass: process.env.DEMO_BYPASS_MFA === '1',
+    claimMfa: Boolean(claims?.is_mfa ?? claims?.mfa),
+    twoFactorEnabled: Boolean(backendUser.twoFactorEnabled || cachedUser?.twoFactorEnabled),
+    totpEnabled: Boolean(backendUser.totpEnabled || cachedUser?.totpEnabled),
+    backupCodeEnabled: Boolean(backendUser.backupCodeEnabled || cachedUser?.backupCodeEnabled),
+    hasSocialLogin: socialCount > 0,
+  });
 
   if (!env.DATABASE_URL) {
     return {
