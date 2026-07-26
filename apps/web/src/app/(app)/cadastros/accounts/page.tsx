@@ -12,11 +12,12 @@ import { accounts, costCenters, institutions } from '@tim/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
+import { ActionForm } from '@/components/action-form';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
   TableBody,
@@ -59,13 +60,17 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
             <CardDescription>Ex.: Nubank, Itaú, Inter</CardDescription>
           </CardHeader>
           <CardContent className="px-5">
-            <form action={createInstitutionAction} className="flex flex-wrap items-end gap-3">
+            <ActionForm
+              action={createInstitutionAction}
+              successMessage="Banco adicionado"
+              className="flex flex-wrap items-end gap-3"
+            >
               <div className="grid min-w-[12rem] flex-1 gap-1.5">
                 <Label htmlFor="bank-name">Nome</Label>
                 <Input id="bank-name" name="name" required placeholder="Nubank" />
               </div>
-              <Button type="submit">Adicionar banco</Button>
-            </form>
+              <SubmitButton pendingLabel="Adicionando…">Adicionar banco</SubmitButton>
+            </ActionForm>
             {banks.length > 0 ? (
               <ul className="mt-4 space-y-1 text-sm text-muted-foreground">
                 {banks.map((bank) => (
@@ -84,7 +89,11 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
             </CardDescription>
           </CardHeader>
           <CardContent className="px-5">
-            <form action={createAccountAction} className="grid gap-3 sm:grid-cols-2">
+            <ActionForm
+              action={createAccountAction}
+              successMessage="Conta criada"
+              className="grid gap-3 sm:grid-cols-2"
+            >
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label htmlFor="name">Nome</Label>
                 <Input id="name" name="name" required placeholder="Caixinha Reserva" />
@@ -178,10 +187,10 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                   placeholder="100 = 100% CDI · 13,15 = 13,15% a.a."
                 />
               </div>
-              <Button type="submit" className="sm:col-span-2">
+              <SubmitButton className="sm:col-span-2" pendingLabel="Adicionando…">
                 Adicionar
-              </Button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           </CardContent>
         </Card>
       </div>
@@ -221,8 +230,9 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                     {formatBrlFromCents(row.balanceCents)}
                   </TableCell>
                   <TableCell>
-                    <form
+                    <ActionForm
                       action={updateAccountBalanceAction}
+                      successMessage="Saldo atualizado"
                       className="flex items-center justify-end gap-1"
                     >
                       <input type="hidden" name="accountId" value={row.id} />
@@ -234,10 +244,10 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                         defaultValue={(row.balanceCents / 100).toFixed(2)}
                         className="h-8 w-28"
                       />
-                      <Button type="submit" size="sm" variant="outline">
+                      <SubmitButton size="sm" variant="outline" pendingLabel="…">
                         OK
-                      </Button>
-                    </form>
+                      </SubmitButton>
+                    </ActionForm>
                   </TableCell>
                 </TableRow>
               ))}

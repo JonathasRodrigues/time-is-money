@@ -4,11 +4,12 @@ import { categories } from '@tim/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
+import { ActionForm } from '@/components/action-form';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
   TableBody,
@@ -38,7 +39,11 @@ export default async function CategoriesSettingsPage(): Promise<React.ReactEleme
           <CardDescription>Adicione além do seed padrão</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={createCategoryAction} className="grid gap-3 md:grid-cols-[1fr_10rem_auto]">
+          <ActionForm
+            action={createCategoryAction}
+            successMessage="Categoria adicionada"
+            className="grid gap-3 md:grid-cols-[1fr_10rem_auto]"
+          >
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="name">Nome</Label>
               <Input id="name" name="name" required />
@@ -51,9 +56,9 @@ export default async function CategoriesSettingsPage(): Promise<React.ReactEleme
               </select>
             </div>
             <div className="flex items-end">
-              <Button type="submit">Adicionar</Button>
+              <SubmitButton pendingLabel="Adicionando…">Adicionar</SubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </CardContent>
       </Card>
       <Card>

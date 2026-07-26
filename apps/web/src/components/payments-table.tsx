@@ -6,6 +6,7 @@ import type { PayableKind } from '@tim/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { runWithToast, withActionToast } from '@/lib/action-toast';
 import {
   payTransactionAction,
   payTransactionsBulkAction,
@@ -93,8 +95,15 @@ export function PaymentsTable({
     if (items.length === 0) return;
 
     startTransition(async () => {
-      await payTransactionsBulkAction({ paidOn: today, items });
-      setSelected(new Set());
+      try {
+        await runWithToast(() => payTransactionsBulkAction({ paidOn: today, items }), {
+          loading: `Pagando ${items.length}…`,
+          success: items.length === 1 ? 'Pagamento registrado' : 'Pagamentos registrados',
+        });
+        setSelected(new Set());
+      } catch {
+        // toast já exibido
+      }
     });
   }
 
@@ -218,17 +227,27 @@ export function PaymentsTable({
                         defaultValue={amountInputDefault(row)}
                         className="h-8 w-28"
                       />
-                      <Button
-                        type="submit"
+                      <SubmitButton
                         size="sm"
                         variant="outline"
-                        formAction={updatePendingAmountAction}
+                        pendingLabel="…"
+                        formAction={withActionToast(updatePendingAmountAction, {
+                          loading: 'Salvando valor…',
+                          success: 'Valor atualizado',
+                        })}
                       >
                         Salvar
-                      </Button>
-                      <Button type="submit" size="sm" formAction={payTransactionAction}>
+                      </SubmitButton>
+                      <SubmitButton
+                        size="sm"
+                        pendingLabel="…"
+                        formAction={withActionToast(payTransactionAction, {
+                          loading: 'Registrando pagamento…',
+                          success: 'Pago',
+                        })}
+                      >
                         Pagar
-                      </Button>
+                      </SubmitButton>
                     </form>
                   </TableCell>
                 </TableRow>

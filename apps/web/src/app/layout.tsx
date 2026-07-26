@@ -3,6 +3,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { shadcn } from '@clerk/ui/themes';
 import { IBM_Plex_Sans } from 'next/font/google';
 import { RegisterServiceWorker } from '@/components/register-sw';
+import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import './globals.css';
 
@@ -44,6 +45,7 @@ export default function RootLayout({
     <TooltipProvider>
       <RegisterServiceWorker />
       {children}
+      <Toaster />
     </TooltipProvider>
   );
 

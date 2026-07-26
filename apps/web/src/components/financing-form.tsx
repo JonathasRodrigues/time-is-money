@@ -12,11 +12,12 @@ import { CheckCircle2, Calculator } from 'lucide-react';
 import { createFinancingAction } from '@/server/actions';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { withActionToast } from '@/lib/action-toast';
 import {
   Table,
   TableBody,
@@ -178,7 +179,10 @@ export function FinancingForm({
         </div>
         <form
           id="financing-create-form"
-          action={createFinancingAction}
+          action={withActionToast(createFinancingAction, {
+            loading: 'Gravando financiamento…',
+            success: 'Financiamento gravado',
+          })}
           className="grid gap-4"
           onSubmit={(event) => {
             if (!simulation || !confirmed) {
@@ -345,9 +349,9 @@ export function FinancingForm({
             </span>
           </label>
 
-          <Button type="submit" disabled={!simulation || !confirmed}>
+          <SubmitButton disabled={!simulation || !confirmed} pendingLabel="Gravando…">
             Gravar financiamento
-          </Button>
+          </SubmitButton>
         </form>
       </div>
 

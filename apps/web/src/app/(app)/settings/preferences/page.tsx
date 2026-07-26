@@ -4,11 +4,12 @@ import { accounts, costCenters, userPreferences } from '@tim/db';
 import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
-import { Button } from '@/components/ui/button';
+import { ActionForm } from '@/components/action-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { updatePreferencesAction } from '@/server/actions';
 import { getAuthSession, getDb } from '@/server/db';
 
@@ -43,7 +44,11 @@ export default async function PreferencesPage(): Promise<React.ReactElement> {
           <CardDescription>Ajustes pessoais neste household</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={updatePreferencesAction} className="flex flex-col gap-5">
+          <ActionForm
+            action={updatePreferencesAction}
+            successMessage="Preferências salvas"
+            className="flex flex-col gap-5"
+          >
             <div className="space-y-3">
               <p className="text-sm font-medium">Notificações</p>
               <label className="flex items-center gap-2 text-sm">
@@ -139,10 +144,10 @@ export default async function PreferencesPage(): Promise<React.ReactElement> {
               </div>
             </div>
 
-            <Button type="submit" className="w-fit">
+            <SubmitButton className="w-fit" pendingLabel="Salvando…">
               Salvar preferências
-            </Button>
-          </form>
+            </SubmitButton>
+          </ActionForm>
         </CardContent>
       </Card>
     </div>

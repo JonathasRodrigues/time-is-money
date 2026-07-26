@@ -4,12 +4,13 @@ import { costCenters } from '@tim/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { CostCenterColorField, CostCenterColorSwatch } from '@/components/cost-center-color-field';
+import { ActionForm } from '@/components/action-form';
 import { PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
   TableBody,
@@ -38,18 +39,22 @@ export default async function CostCentersPage(): Promise<React.ReactElement> {
           <CardDescription>Escolha uma cor pronta ou personalize no seletor.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={createCostCenterAction} className="grid gap-4">
+          <ActionForm
+            action={createCostCenterAction}
+            successMessage="Centro adicionado"
+            className="grid gap-4"
+          >
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="name">Nome</Label>
                 <Input id="name" name="name" placeholder="Empresa X" required />
               </div>
-              <Button type="submit" className="sm:mb-0.5">
+              <SubmitButton className="sm:mb-0.5" pendingLabel="Adicionando…">
                 Adicionar
-              </Button>
+              </SubmitButton>
             </div>
             <CostCenterColorField />
-          </form>
+          </ActionForm>
         </CardContent>
       </Card>
       <Card>

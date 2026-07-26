@@ -15,11 +15,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
+import { ActionForm } from '@/components/action-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { createTransferAction } from '@/server/actions';
 import { getAuthSession, getDb } from '@/server/db';
 
@@ -138,7 +140,12 @@ export default async function WealthPage(): Promise<React.ReactElement> {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-5">
-            <form action={createTransferAction} className="grid gap-3 md:grid-cols-2">
+            <ActionForm
+              action={createTransferAction}
+              successMessage="Transferência feita"
+              loadingMessage="Transferindo…"
+              className="grid gap-3 md:grid-cols-2"
+            >
               <div className="grid gap-1.5">
                 <Label htmlFor="fromAccountId">De</Label>
                 <select
@@ -197,10 +204,10 @@ export default async function WealthPage(): Promise<React.ReactElement> {
                 <Label htmlFor="description">Descrição (opcional)</Label>
                 <Input id="description" name="description" placeholder="Guardar na reserva" />
               </div>
-              <Button type="submit" className="md:col-span-2 md:w-fit">
+              <SubmitButton className="md:col-span-2 md:w-fit" pendingLabel="Transferindo…">
                 Confirmar transferência
-              </Button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           </CardContent>
         </Card>
       ) : null}

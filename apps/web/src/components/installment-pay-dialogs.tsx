@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { runWithToast } from '@/lib/action-toast';
 import { payInstallmentAction } from '@/server/actions';
 
 export interface FinancingInstallmentRow {
@@ -86,8 +88,15 @@ export function PayMonthDialog({
         <form
           action={async (formData) => {
             startTransition(async () => {
-              await payInstallmentAction(formData);
-              onOpenChange(false);
+              try {
+                await runWithToast(() => payInstallmentAction(formData), {
+                  loading: 'Registrando pagamento…',
+                  success: 'Parcela paga',
+                });
+                onOpenChange(false);
+              } catch {
+                // toast já exibido
+              }
             });
           }}
           className="grid gap-4"
@@ -126,9 +135,9 @@ export function PayMonthDialog({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? 'Pagando…' : 'Confirmar pagamento'}
-            </Button>
+            <SubmitButton disabled={pending} pendingLabel="Pagando…">
+              Confirmar pagamento
+            </SubmitButton>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -180,8 +189,15 @@ export function AmortizeFutureDialog({
         <form
           action={async (formData) => {
             startTransition(async () => {
-              await payInstallmentAction(formData);
-              onOpenChange(false);
+              try {
+                await runWithToast(() => payInstallmentAction(formData), {
+                  loading: 'Confirmando amortização…',
+                  success: 'Amortização registrada',
+                });
+                onOpenChange(false);
+              } catch {
+                // toast já exibido
+              }
             });
           }}
           className="grid gap-4"
@@ -273,9 +289,9 @@ export function AmortizeFutureDialog({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={pending || totalCents == null}>
-              {pending ? 'Confirmando…' : 'Confirmar neste mês'}
-            </Button>
+            <SubmitButton disabled={pending || totalCents == null} pendingLabel="Confirmando…">
+              Confirmar neste mês
+            </SubmitButton>
           </DialogFooter>
         </form>
       </DialogContent>

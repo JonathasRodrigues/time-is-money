@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { withActionToast } from '@/lib/action-toast';
 import { createMonthlySeriesAction, createPendingTransactionAction } from '@/server/actions';
 
 type PayableFormKind = 'variable' | 'fixed' | 'income';
@@ -183,7 +185,13 @@ export function NewPayableSheet({
           </div>
 
           {kind === 'variable' ? (
-            <form action={createPendingTransactionAction} className="grid gap-3">
+            <form
+              action={withActionToast(createPendingTransactionAction, {
+                loading: 'Criando…',
+                success: 'Adicionado em contas a pagar',
+              })}
+              className="grid gap-3"
+            >
               <input type="hidden" name="installmentCount" value={effectiveInstallmentCount} />
               {isParcelado ? (
                 <input type="hidden" name="amount" value={totalAmountForSubmit} />
@@ -286,14 +294,20 @@ export function NewPayableSheet({
                 accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <Button type="submit" disabled={isParcelado && !canSubmitParcelado}>
+              <SubmitButton disabled={isParcelado && !canSubmitParcelado} pendingLabel="Criando…">
                 {isParcelado ? `Criar ${installmentCount} parcelas` : meta.submit}
-              </Button>
+              </SubmitButton>
             </form>
           ) : null}
 
           {kind === 'fixed' ? (
-            <form action={createMonthlySeriesAction} className="grid gap-3">
+            <form
+              action={withActionToast(createMonthlySeriesAction, {
+                loading: 'Criando conta fixa…',
+                success: 'Conta fixa criada',
+              })}
+              className="grid gap-3"
+            >
               <input type="hidden" name="type" value="expense" />
               <div className="grid gap-1.5">
                 <Label htmlFor="fix-desc">Descrição</Label>
@@ -331,12 +345,18 @@ export function NewPayableSheet({
                 accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <Button type="submit">{meta.submit}</Button>
+              <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
             </form>
           ) : null}
 
           {kind === 'income' ? (
-            <form action={createMonthlySeriesAction} className="grid gap-3">
+            <form
+              action={withActionToast(createMonthlySeriesAction, {
+                loading: 'Criando receita…',
+                success: 'Receita fixa criada',
+              })}
+              className="grid gap-3"
+            >
               <input type="hidden" name="type" value="income" />
               <div className="grid gap-1.5">
                 <Label htmlFor="inc-desc">Descrição</Label>
@@ -379,7 +399,7 @@ export function NewPayableSheet({
                 accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <Button type="submit">{meta.submit}</Button>
+              <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
             </form>
           ) : null}
         </div>

@@ -10,8 +10,9 @@ import { accounts, categories, costCenters, transactions } from '@tim/db';
 import { and, asc, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/page-header';
-import { Button } from '@/components/ui/button';
+import { ActionForm } from '@/components/action-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { ensurePaymentInstancesAction } from '@/server/actions';
 import { createAppContext } from '@/server/context';
 import { getAuthSession, getDb } from '@/server/db';
@@ -167,11 +168,14 @@ export default async function PaymentsPage({
         description={`O que falta pagar · ${range.label}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <form action={ensurePaymentInstancesAction}>
-              <Button type="submit" variant="outline" size="sm">
+            <ActionForm
+              action={ensurePaymentInstancesAction}
+              successMessage="Contas fixas atualizadas"
+            >
+              <SubmitButton variant="outline" size="sm" pendingLabel="Atualizando…">
                 Atualizar fixas
-              </Button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
             <NewPayableSheet
               centers={centers.map((c) => ({ id: c.id, name: c.name }))}
               expenseCategories={expenseCats.map((c) => ({ id: c.id, name: c.name }))}

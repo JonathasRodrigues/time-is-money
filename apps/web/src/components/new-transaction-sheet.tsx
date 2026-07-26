@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { withActionToast } from '@/lib/action-toast';
 import { createTransactionAction } from '@/server/actions';
 import { cn } from '@/lib/utils';
 
@@ -74,7 +76,13 @@ export function NewTransactionSheet({
             Avulso no extrato. Contas fixas mensais ficam em Contas a pagar.
           </SheetDescription>
         </SheetHeader>
-        <form action={createTransactionAction} className="mt-6 grid gap-4 px-4 pb-6">
+        <form
+          action={withActionToast(createTransactionAction, {
+            loading: 'Salvando lançamento…',
+            success: 'Lançamento salvo',
+          })}
+          className="mt-6 grid gap-4 px-4 pb-6"
+        >
           <input type="hidden" name="type" value={type} />
           <input type="hidden" name="status" value={status} />
 
@@ -206,9 +214,9 @@ export function NewTransactionSheet({
             <Input id="new-notes" name="notes" />
           </div>
 
-          <Button type="submit" className="mt-2">
+          <SubmitButton className="mt-2" pendingLabel="Salvando…">
             {isPaid ? 'Salvar no extrato' : isExpense ? 'Adicionar a pagar' : 'Adicionar a receber'}
-          </Button>
+          </SubmitButton>
         </form>
       </SheetContent>
     </Sheet>

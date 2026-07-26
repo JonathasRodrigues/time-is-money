@@ -1,7 +1,11 @@
+'use client';
+
 import Link from 'next/link';
 import { formatBrlFromCents } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { withActionToast } from '@/lib/action-toast';
 import {
   confirmIncomeItemAction,
   confirmIncomeReceiptAction,
@@ -42,16 +46,26 @@ export function IncomeReceiptBanner({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!hasSeries ? (
-              <form action={confirmIncomeReceiptAction}>
-                <Button type="submit" size="sm">
+              <form
+                action={withActionToast(confirmIncomeReceiptAction, {
+                  loading: 'Confirmando…',
+                  success: 'Recebimento confirmado',
+                })}
+              >
+                <SubmitButton size="sm" pendingLabel="Confirmando…">
                   Sim, recebi — contas a pagar
-                </Button>
+                </SubmitButton>
               </form>
             ) : null}
-            <form action={snoozeIncomeReceiptAction}>
-              <Button type="submit" size="sm" variant="outline">
+            <form
+              action={withActionToast(snoozeIncomeReceiptAction, {
+                loading: 'Ok…',
+                success: 'Lembrete adiado',
+              })}
+            >
+              <SubmitButton size="sm" variant="outline" pendingLabel="…">
                 Agora não
-              </Button>
+              </SubmitButton>
             </form>
             <Button asChild size="sm" variant="ghost">
               <Link href="/payments">Contas a pagar</Link>
@@ -77,7 +91,13 @@ export function IncomeReceiptBanner({
                         : null}
                     </p>
                   </div>
-                  <form action={confirmIncomeItemAction} className="flex items-center gap-2">
+                  <form
+                    action={withActionToast(confirmIncomeItemAction, {
+                      loading: 'Confirmando…',
+                      success: 'Receita confirmada',
+                    })}
+                    className="flex items-center gap-2"
+                  >
                     <input type="hidden" name="transactionId" value={item.id} />
                     <input type="hidden" name="paidOn" value={today} />
                     <Input
@@ -90,9 +110,9 @@ export function IncomeReceiptBanner({
                       defaultValue={suggestion != null ? (suggestion / 100).toFixed(2) : ''}
                       className="h-8 w-28 bg-background"
                     />
-                    <Button type="submit" size="sm">
+                    <SubmitButton size="sm" pendingLabel="…">
                       Confirmar
-                    </Button>
+                    </SubmitButton>
                   </form>
                 </li>
               );

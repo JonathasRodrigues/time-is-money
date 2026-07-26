@@ -47,6 +47,11 @@ import { redirect } from 'next/navigation';
 import { createAppContext } from '@/server/context';
 import { getAuthSession, getDb } from '@/server/db';
 
+/** Uma revalidação de layout cobre as páginas do app — mais rápido que N revalidatePath. */
+function revalidateApp(): void {
+  revalidatePath('/', 'layout');
+}
+
 export async function createHouseholdAction(name: string) {
   const { userId } = await auth();
   if (!userId) throw new Error('Não autenticado');
@@ -73,7 +78,7 @@ export async function createHouseholdAction(name: string) {
     userId,
   });
 
-  revalidatePath('/dashboard');
+  revalidateApp();
   return { householdId: household.id };
 }
 
@@ -97,9 +102,7 @@ export async function createTransactionAction(formData: FormData) {
     notes: String(formData.get('notes') || '') || undefined,
   });
   await createTransaction(ctx, parsed, 'manual');
-  revalidatePath('/transactions');
-  revalidatePath('/payments');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function createCostCenterAction(formData: FormData) {
@@ -112,8 +115,7 @@ export async function createCostCenterAction(formData: FormData) {
   });
   const db = getDb();
   await db.insert(costCenters).values(input);
-  revalidatePath('/cadastros/cost-centers');
-  revalidatePath('/settings/cost-centers');
+  revalidateApp();
 }
 
 export async function createCategoryAction(formData: FormData) {
@@ -132,8 +134,7 @@ export async function createCategoryAction(formData: FormData) {
     type: input.type,
     parentId: input.parentId ?? undefined,
   });
-  revalidatePath('/cadastros/categories');
-  revalidatePath('/settings/categories');
+  revalidateApp();
 }
 
 export async function createAccountAction(formData: FormData) {
@@ -181,9 +182,7 @@ export async function createAccountAction(formData: FormData) {
     yieldType: input.yieldType,
     yieldBps: input.yieldBps ?? null,
   });
-  revalidatePath('/cadastros/accounts');
-  revalidatePath('/settings/accounts');
-  revalidatePath('/wealth');
+  revalidateApp();
 }
 
 export async function createInstitutionAction(formData: FormData) {
@@ -195,9 +194,7 @@ export async function createInstitutionAction(formData: FormData) {
   });
   const db = getDb();
   await db.insert(institutions).values(input);
-  revalidatePath('/cadastros/accounts');
-  revalidatePath('/settings/accounts');
-  revalidatePath('/wealth');
+  revalidateApp();
 }
 
 export async function updateAccountBalanceAction(formData: FormData) {
@@ -215,9 +212,7 @@ export async function updateAccountBalanceAction(formData: FormData) {
     .update(accounts)
     .set({ balanceCents: input.balanceCents, updatedAt: new Date() })
     .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)));
-  revalidatePath('/cadastros/accounts');
-  revalidatePath('/settings/accounts');
-  revalidatePath('/wealth');
+  revalidateApp();
 }
 
 export async function createTransferAction(formData: FormData) {
@@ -234,10 +229,7 @@ export async function createTransferAction(formData: FormData) {
     description: descriptionRaw === '' ? undefined : descriptionRaw,
   });
   await createTransfer(ctx, parsed);
-  revalidatePath('/wealth');
-  revalidatePath('/dashboard');
-  revalidatePath('/cadastros/accounts');
-  revalidatePath('/settings/accounts');
+  revalidateApp();
 }
 
 export async function createFinancingAction(formData: FormData) {
@@ -263,8 +255,7 @@ export async function createFinancingAction(formData: FormData) {
     amortizationSystem,
   });
   await createFinancing(ctx, parsed);
-  revalidatePath('/financings');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function payInstallmentAction(formData: FormData) {
@@ -280,10 +271,7 @@ export async function payInstallmentAction(formData: FormData) {
     amountCents: amountRaw === '' ? undefined : Math.round(Number(amountRaw) * 100),
     extraAmortizationCents: extraRaw === '' ? undefined : Math.round(Number(extraRaw) * 100),
   });
-  revalidatePath('/financings');
-  revalidatePath('/transactions');
-  revalidatePath('/payments');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function createPendingTransactionAction(formData: FormData) {
@@ -304,9 +292,7 @@ export async function createPendingTransactionAction(formData: FormData) {
     installmentCount,
   });
   await createPendingTransaction(ctx, parsed, 'manual');
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function createMonthlySeriesAction(formData: FormData) {
@@ -325,10 +311,7 @@ export async function createMonthlySeriesAction(formData: FormData) {
     defaultAmountCents: amountRaw === '' ? null : Math.round(Number(amountRaw) * 100),
   });
   await createMonthlySeries(ctx, parsed);
-  revalidatePath('/');
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function payTransactionAction(formData: FormData) {
@@ -342,10 +325,7 @@ export async function payTransactionAction(formData: FormData) {
     amountCents: amountRaw === '' ? undefined : Math.round(Number(amountRaw) * 100),
   });
   await payTransaction(ctx, parsed);
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
-  revalidatePath('/financings');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function payTransactionsBulkAction(input: {
@@ -359,10 +339,7 @@ export async function payTransactionsBulkAction(input: {
     paidOn: input.paidOn,
     items: input.items,
   });
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
-  revalidatePath('/financings');
-  revalidatePath('/dashboard');
+  revalidateApp();
 }
 
 export async function updatePendingAmountAction(formData: FormData) {
@@ -375,15 +352,13 @@ export async function updatePendingAmountAction(formData: FormData) {
     amountCents: amountRaw === '' ? null : Math.round(Number(amountRaw) * 100),
   });
   await updatePendingAmount(ctx, parsed);
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
-  revalidatePath('/financings');
+  revalidateApp();
 }
 
 export async function ensurePaymentInstancesAction() {
   const ctx = await createAppContext();
   await ensureSeriesInstancesForMonth(ctx);
-  revalidatePath('/payments');
+  revalidateApp();
 }
 
 export async function confirmIncomeReceiptAction() {
@@ -404,10 +379,7 @@ export async function confirmIncomeReceiptAction() {
         eq(userPreferences.userId, session.userId),
       ),
     );
-  revalidatePath('/');
-  revalidatePath('/dashboard');
-  revalidatePath('/payments');
-  revalidatePath('/settings/preferences');
+  revalidateApp();
   redirect('/payments?payday=1');
 }
 
@@ -460,17 +432,11 @@ export async function confirmIncomeItemAction(formData: FormData) {
           eq(userPreferences.userId, session.userId),
         ),
       );
-    revalidatePath('/');
-    revalidatePath('/dashboard');
-    revalidatePath('/payments');
-    revalidatePath('/transactions');
+    revalidateApp();
     redirect('/payments?payday=1');
   }
 
-  revalidatePath('/');
-  revalidatePath('/dashboard');
-  revalidatePath('/payments');
-  revalidatePath('/transactions');
+  revalidateApp();
 }
 
 export async function snoozeIncomeReceiptAction() {
@@ -489,8 +455,7 @@ export async function snoozeIncomeReceiptAction() {
         eq(userPreferences.userId, session.userId),
       ),
     );
-  revalidatePath('/dashboard');
-  revalidatePath('/payments');
+  revalidateApp();
 }
 
 export async function updatePreferencesAction(formData: FormData) {
@@ -529,7 +494,5 @@ export async function updatePreferencesAction(formData: FormData) {
         eq(userPreferences.userId, session.userId),
       ),
     );
-  revalidatePath('/settings/preferences');
-  revalidatePath('/dashboard');
-  revalidatePath('/payments');
+  revalidateApp();
 }
