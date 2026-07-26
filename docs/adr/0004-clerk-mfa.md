@@ -1,32 +1,32 @@
-# ADR 0004: Clerk com MFA obrigatório
+# ADR 0004: Clerk com MFA
 
 ## Status
 
-Aceito
+Aceito (MFA do app desativado enquanto Hobby)
 
 ## Contexto
 
 App financeiro doméstico exige autenticação confiável sem implementar auth próprio.
+MFA TOTP no Clerk é recurso de plano **Pro** (~US$ 25/mês); no Hobby não está disponível.
 
 ## Decisão
 
-- **Clerk** para sign-in/up, sessões e MFA
+- **Clerk** para sign-in/up e sessões (social + e-mail)
 - Middleware em `apps/web/src/middleware.ts` protege rotas
 - `getAuthSession()` mapeia Clerk user → `memberships` → role
-- MFA verificado antes de operações (`requireSession`)
-
-Redirect MFA: `/mfa-required`
+- **Não** bloquear o app por MFA enquanto o plano Clerk for Hobby
+- Quando houver Pro: reavaliar gate opcional em `/mfa-required` + `twoFactorEnabled`
 
 ## Consequências
 
 **Positivas**
 
-- MFA, social login, UI pronta
-- JWT/session gerenciados
+- Login social/email funciona no Hobby
+- MFA, social login, UI pronta no Clerk quando o plano permitir
 
 **Negativas**
 
-- Custo Clerk em escala
+- Sem 2FA nativo no Hobby
 - Dependência externa para auth
 - `household` separado de Clerk Org (membership própria)
 
@@ -34,3 +34,4 @@ Redirect MFA: `/mfa-required`
 
 - NextAuth credentials — MFA manual
 - Auth0 — similar, Clerk melhor DX Next
+- Exigir MFA no Hobby — bloqueia usuários (feature Pro)

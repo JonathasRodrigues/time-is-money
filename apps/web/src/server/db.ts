@@ -1,4 +1,4 @@
-import { resolveMfaSatisfied, type AuthSession } from '@tim/auth';
+import type { AuthSession } from '@tim/auth';
 import { createDb, memberships, type Database } from '@tim/db';
 import { DEMO, getDemoSession, isDemoMode } from '@tim/mocks';
 import type { Role } from '@tim/permissions';
@@ -44,32 +44,17 @@ export async function getAuthSession(): Promise<AuthSession | null> {
     return getDemoSession(membership.householdId);
   }
 
-  const { auth, clerkClient, currentUser } = await import('@clerk/nextjs/server');
+  const { auth, currentUser } = await import('@clerk/nextjs/server');
   const session = await auth();
   if (!session.userId) {
     return null;
   }
 
-  // currentUser() pode vir cacheado; Backend API é a fonte de verdade do MFA.
-  const client = await clerkClient();
-  const backendUser = await client.users.getUser(session.userId);
-  const cachedUser = await currentUser();
-  const email =
-    backendUser.primaryEmailAddress?.emailAddress ??
-    cachedUser?.primaryEmailAddress?.emailAddress ??
-    null;
+  const user = await currentUser();
+  const email = user?.primaryEmailAddress?.emailAddress ?? null;
 
-  const claims = session.sessionClaims as Record<string, unknown> | null;
-  const socialCount =
-    (backendUser.externalAccounts?.length ?? 0) || (cachedUser?.externalAccounts?.length ?? 0);
-  const mfaEnabled = resolveMfaSatisfied({
-    bypass: process.env.DEMO_BYPASS_MFA === '1',
-    claimMfa: Boolean(claims?.is_mfa ?? claims?.mfa),
-    twoFactorEnabled: Boolean(backendUser.twoFactorEnabled || cachedUser?.twoFactorEnabled),
-    totpEnabled: Boolean(backendUser.totpEnabled || cachedUser?.totpEnabled),
-    backupCodeEnabled: Boolean(backendUser.backupCodeEnabled || cachedUser?.backupCodeEnabled),
-    hasSocialLogin: socialCount > 0,
-  });
+  // MFA do Clerk é Pro — não bloqueamos no Hobby. Campo preservado como true.
+  const mfaEnabled = true;
 
   if (!env.DATABASE_URL) {
     return {

@@ -42,9 +42,9 @@ UI pode esconder botões com `can(session, 'transactions.write')`, mas **sempre*
 
 ## MFA
 
-`requireSession` rejeita sessões sem MFA (`AuthError: MFA_REQUIRED`). Redirect em `/mfa-required`.
+MFA TOTP do Clerk exige plano Pro. O app **não** redireciona mais para `/mfa-required` nem rejeita sessão por falta de MFA no Hobby.
 
-Bypass apenas em dev: `DEMO_BYPASS_MFA=1`.
+Campo `session.mfaEnabled` permanece na API (sempre `true` por compatibilidade) até reativarmos o gate com Pro.
 
 ## Mapeamento rota → capability
 

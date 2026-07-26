@@ -7,7 +7,7 @@ Time is Money é um monorepo **pnpm + Turborepo** com uma aplicação Next.js 15
 | Camada        | Tecnologia                                                 |
 | ------------- | ---------------------------------------------------------- |
 | Frontend      | Next.js 15 (App Router), React 19, Tailwind 4, Recharts    |
-| Auth          | Clerk (MFA obrigatório)                                    |
+| Auth          | Clerk (MFA opcional — Pro)                                 |
 | Banco         | PostgreSQL (Neon serverless) + Drizzle ORM                 |
 | Email         | Resend + React Email                                       |
 | Chat          | Jarvis (`@tim/jarvis`) — heurístico ou OpenAI              |

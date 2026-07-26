@@ -6,30 +6,11 @@ export interface AuthSession {
   email: string | null;
   householdId: string;
   role: Role;
+  /**
+   * Mantido por compatibilidade. MFA TOTP do Clerk exige plano Pro;
+   * o app não bloqueia mais por MFA no Hobby.
+   */
   mfaEnabled: boolean;
-}
-
-/** Fatos de MFA vindos do Clerk (sem depender do SDK no domain). */
-export interface ClerkMfaFacts {
-  bypass?: boolean;
-  claimMfa?: boolean;
-  twoFactorEnabled?: boolean;
-  totpEnabled?: boolean;
-  backupCodeEnabled?: boolean;
-  /** Conta com OAuth social verificado (Google, etc.) — satisfaz o gate do app. */
-  hasSocialLogin?: boolean;
-}
-
-/**
- * Login social já autentica via provedor externo; MFA TOTP do Clerk
- * (plano Pro) não é exigido nesses casos.
- */
-export function resolveMfaSatisfied(facts: ClerkMfaFacts): boolean {
-  if (facts.bypass) return true;
-  if (facts.claimMfa) return true;
-  if (facts.twoFactorEnabled || facts.totpEnabled || facts.backupCodeEnabled) return true;
-  if (facts.hasSocialLogin) return true;
-  return false;
 }
 
 export class AuthError extends Error {
@@ -45,9 +26,6 @@ export class AuthError extends Error {
 export function requireSession(session: AuthSession | null): AuthSession {
   if (!session) {
     throw new AuthError('Não autenticado', 'UNAUTHENTICATED');
-  }
-  if (!session.mfaEnabled) {
-    throw new AuthError('MFA obrigatório', 'MFA_REQUIRED');
   }
   if (!session.householdId) {
     throw new AuthError('Household não configurado', 'NO_HOUSEHOLD');

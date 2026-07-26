@@ -14,8 +14,7 @@
     "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL",
     "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL",
     "NEXT_PUBLIC_APP_URL",
-    "DEMO_MODE",
-    "DEMO_BYPASS_MFA"
+    "DEMO_MODE"
   ],
   "tasks": {
     "build": {

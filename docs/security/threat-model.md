@@ -24,7 +24,7 @@ Análise pragmática para Time is Money (finanças domésticas, multi-tenant).
 | Superfície             | Risco                       | Mitigação                                             |
 | ---------------------- | --------------------------- | ----------------------------------------------------- |
 | Server actions         | IDOR cross-household        | Filtro `householdId` da sessão em toda query          |
-| Clerk session          | Account takeover            | MFA obrigatório                                       |
+| Clerk session          | Account takeover            | Clerk + OAuth; MFA quando plano Pro                   |
 | Import CSV             | XSS/injection via descrição | Escape na UI; validação Zod                           |
 | Cron `/api/cron/*`     | Trigger não autorizado      | `CRON_SECRET` Bearer                                  |
 | Jarvis LLM             | Alucinação de entidades     | Resolver só contra contexto real; `ask_clarification` |

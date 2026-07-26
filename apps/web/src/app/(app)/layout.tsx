@@ -43,9 +43,6 @@ export default async function AppLayout({
     if (configured && !session) {
       redirect('/sign-in');
     }
-    if (session && !session.mfaEnabled && process.env.DEMO_BYPASS_MFA !== '1') {
-      redirect('/mfa-required');
-    }
   } else if (!session?.householdId) {
     redirect('/onboarding');
   }

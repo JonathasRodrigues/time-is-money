@@ -70,7 +70,7 @@ Ponto de entrada para agentes de IA. Leia este arquivo antes de qualquer altera�
 
 ### Segurança
 
-- MFA obrigatório via Clerk (`requireSession` em `@tim/auth`).
+- Sessão via Clerk (`requireSession` em `@tim/auth`). MFA TOTP do Clerk é Pro — não bloqueamos no Hobby.
 - Verificar capability antes de mutações (`requireCapability`).
 - Campos sensíveis (ex.: `notes`) criptografados com `@tim/crypto`.
 - Cron protegido por `CRON_SECRET` (Bearer token).
