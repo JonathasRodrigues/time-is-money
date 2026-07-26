@@ -5,23 +5,210 @@ import { requireCapability, requireSession } from '@tim/auth';
 import {
   accounts,
   categories,
+  categoryAliases,
   costCenters,
   exportJobs,
   importJobRows,
   importJobs,
   transactions,
 } from '@tim/db';
+import { resolveEntities, type ResolveContext } from '@tim/domain';
 import {
   autoMapColumns,
   buildExportCsv,
   buildExportXlsx,
   buildTemplateCsv,
+  detectImportFormat,
+  extractYearFromFilename,
+  mapPaymentMethodToAccount,
   mapRows,
+  parseContasMonthlyWorkbook,
   parseSpreadsheet,
+  type ImportFormat,
+  type ImportRowResult,
+  type ParsedImportRow,
 } from '@tim/imex';
-import { and, eq, gte, isNull, lte } from 'drizzle-orm';
+import { updateImportPreviewSchema, type UpdateImportPreviewInput } from '@tim/validators';
+import { and, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
 import { createAppContext } from '@/server/context';
 import { getDb } from '@/server/db';
+
+export type ImportPreviewEntityOption = { id: string; name: string; type?: string };
+
+export type ImportPaymentMethodMapping = {
+  /** Rótulo original da planilha; string vazia = sem método. */
+  method: string;
+  count: number;
+  /** Conta sugerida pelo parser (pode não existir no household). */
+  suggestedAccount: string | null;
+  /** Conta do household já casada (fuzzy/exato), se houver. */
+  matchedAccount: string | null;
+};
+
+export type ImportPreviewRowDto = {
+  id: string;
+  rowNumber: number;
+  status: 'ok' | 'error' | 'skip';
+  reason?: string | null;
+  occurredOn?: string;
+  amountCents?: number;
+  type?: 'income' | 'expense';
+  description?: string;
+  category?: string;
+  costCenter?: string;
+  account?: string;
+  paymentMethod?: string;
+  tags?: string[];
+};
+
+export type ImportPreviewResult = {
+  jobId: string;
+  importFormat: ImportFormat;
+  year: number | null;
+  fileName: string;
+  ok: number;
+  error: number;
+  skip: number;
+  rows: ImportPreviewRowDto[];
+  paymentMethods: ImportPaymentMethodMapping[];
+  options: {
+    categories: ImportPreviewEntityOption[];
+    accounts: ImportPreviewEntityOption[];
+    costCenters: ImportPreviewEntityOption[];
+  };
+};
+
+function payloadFromResult(row: ImportRowResult): Record<string, unknown> {
+  if (!row.data) return {};
+  return { ...row.data };
+}
+
+function dtoFromDbRow(row: {
+  id: string;
+  rowNumber: number;
+  status: 'ok' | 'error' | 'skip';
+  reason: string | null;
+  payload: Record<string, unknown> | null;
+}): ImportPreviewRowDto {
+  const payload = (row.payload ?? {}) as Partial<ParsedImportRow>;
+  return {
+    id: row.id,
+    rowNumber: row.rowNumber,
+    status: row.status,
+    reason: row.reason,
+    occurredOn: payload.occurredOn,
+    amountCents: payload.amountCents,
+    type: payload.type,
+    description: payload.description,
+    category: payload.category,
+    costCenter: payload.costCenter,
+    account: payload.account,
+    paymentMethod: payload.paymentMethod,
+    tags: payload.tags,
+  };
+}
+
+function normalizeName(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
+function matchHouseholdAccount(
+  suggested: string | null | undefined,
+  accounts: ImportPreviewEntityOption[],
+): string | null {
+  if (!suggested) return null;
+  const key = normalizeName(suggested);
+  const exact = accounts.find((a) => normalizeName(a.name) === key);
+  if (exact) return exact.name;
+  const partial = accounts.find((a) => {
+    const n = normalizeName(a.name);
+    return n.includes(key) || key.includes(n);
+  });
+  return partial?.name ?? null;
+}
+
+function buildPaymentMethodMappings(
+  rows: ImportPreviewRowDto[],
+  accounts: ImportPreviewEntityOption[],
+  importFormat: ImportFormat,
+): ImportPaymentMethodMapping[] {
+  if (importFormat !== 'contas-monthly') return [];
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.occurredOn) continue;
+    const method = row.paymentMethod ?? '';
+    counts.set(method, (counts.get(method) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
+    .map(([method, count]) => {
+      const suggestedAccount = mapPaymentMethodToAccount(method || null) ?? null;
+      return {
+        method,
+        count,
+        suggestedAccount,
+        matchedAccount: matchHouseholdAccount(suggestedAccount, accounts),
+      };
+    });
+}
+
+async function loadHouseholdOptions(householdId: string): Promise<ImportPreviewResult['options']> {
+  const db = getDb();
+  const [cats, centers, accs] = await Promise.all([
+    db.select().from(categories).where(eq(categories.householdId, householdId)),
+    db.select().from(costCenters).where(eq(costCenters.householdId, householdId)),
+    db.select().from(accounts).where(eq(accounts.householdId, householdId)),
+  ]);
+  return {
+    categories: cats.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+    accounts: accs.map((a) => ({ id: a.id, name: a.name })),
+    costCenters: centers.map((c) => ({ id: c.id, name: c.name })),
+  };
+}
+
+async function buildResolveContext(householdId: string): Promise<ResolveContext> {
+  const db = getDb();
+  const [centers, cats, aliases, accs] = await Promise.all([
+    db.select().from(costCenters).where(eq(costCenters.householdId, householdId)),
+    db.select().from(categories).where(eq(categories.householdId, householdId)),
+    db.select().from(categoryAliases).where(eq(categoryAliases.householdId, householdId)),
+    db.select().from(accounts).where(eq(accounts.householdId, householdId)),
+  ]);
+
+  const aliasByCategory = aliases.reduce<Record<string, string[]>>((acc, row) => {
+    acc[row.categoryId] = [...(acc[row.categoryId] ?? []), row.alias];
+    return acc;
+  }, {});
+
+  return {
+    costCenters: centers.map((c) => ({ id: c.id, name: c.name })),
+    categories: cats.map((c) => ({
+      id: c.id,
+      name: c.name,
+      type: c.type,
+      aliases: aliasByCategory[c.id] ?? [],
+    })),
+    accounts: accs.map((a) => ({
+      id: a.id,
+      name: a.name,
+      costCenterId: a.costCenterId,
+    })),
+  };
+}
+
+function pickFallbackCategoryId(
+  context: ResolveContext,
+  type: 'income' | 'expense',
+): string | null {
+  const sameType = context.categories.filter((c) => c.type === type);
+  const preferred = sameType.find((c) => {
+    const n = c.name.toLowerCase();
+    return n === 'outros' || n === 'sem categoria';
+  });
+  return preferred?.id ?? sameType[0]?.id ?? null;
+}
 
 export async function downloadTemplateAction(): Promise<{ csv: string }> {
   const session = requireSession((await createAppContext()).session);
@@ -100,12 +287,7 @@ export async function exportTransactionsAction(input: {
   };
 }
 
-export async function previewImportAction(formData: FormData): Promise<{
-  jobId: string;
-  ok: number;
-  error: number;
-  sample: Array<{ rowNumber: number; status: string; reason?: string }>;
-}> {
+export async function previewImportAction(formData: FormData): Promise<ImportPreviewResult> {
   const ctx = await createAppContext();
   const session = requireSession(ctx.session);
   requireCapability(session, 'import.write');
@@ -114,12 +296,37 @@ export async function previewImportAction(formData: FormData): Promise<{
     throw new Error('Arquivo obrigatório');
   }
 
+  const yearOverrideRaw = formData.get('year');
+  const yearOverride =
+    typeof yearOverrideRaw === 'string' && yearOverrideRaw.trim() ? Number(yearOverrideRaw) : null;
+
   const name = file.name.toLowerCase();
   const format = name.endsWith('.xlsx') ? 'xlsx' : 'csv';
   const buffer = Buffer.from(await file.arrayBuffer());
-  const parsed = parseSpreadsheet(buffer, format);
-  const mapping = autoMapColumns(parsed.headers);
-  const results = mapRows(parsed.rows, mapping);
+  const importFormat = detectImportFormat(buffer, format);
+
+  let results: ImportRowResult[];
+  let mapping: Record<string, string> = {};
+  let year: number | null = null;
+
+  if (importFormat === 'contas-monthly') {
+    year =
+      yearOverride && Number.isInteger(yearOverride)
+        ? yearOverride
+        : extractYearFromFilename(file.name);
+    if (!year) {
+      throw new Error(
+        'Não foi possível detectar o ano no nome do arquivo. Informe o ano (ex.: 2024).',
+      );
+    }
+    results = parseContasMonthlyWorkbook(buffer, year);
+    mapping = { format: 'contas-monthly', year: String(year) };
+  } else {
+    const parsed = parseSpreadsheet(buffer, format);
+    const columnMapping = autoMapColumns(parsed.headers);
+    mapping = columnMapping as unknown as Record<string, string>;
+    results = mapRows(parsed.rows, columnMapping);
+  }
 
   const db = getDb();
   const [job] = await db
@@ -136,28 +343,105 @@ export async function previewImportAction(formData: FormData): Promise<{
 
   if (!job) throw new Error('Falha ao criar job');
 
+  let storedRows: Array<{
+    id: string;
+    rowNumber: number;
+    status: 'ok' | 'error' | 'skip';
+    reason: string | null;
+    payload: Record<string, unknown> | null;
+  }> = [];
+
   if (results.length > 0) {
-    await db.insert(importJobRows).values(
-      results.map((row) => ({
-        jobId: job.id,
-        rowNumber: row.rowNumber,
-        status: row.status,
-        payload: row.data ?? {},
-        reason: row.reason,
-      })),
-    );
+    storedRows = await db
+      .insert(importJobRows)
+      .values(
+        results.map((row) => ({
+          jobId: job.id,
+          rowNumber: row.rowNumber,
+          status: row.status,
+          payload: payloadFromResult(row),
+          reason: row.reason,
+        })),
+      )
+      .returning();
   }
+
+  const options = await loadHouseholdOptions(session.householdId);
+  const rowDtos = storedRows.map(dtoFromDbRow);
 
   return {
     jobId: job.id,
-    ok: results.filter((r) => r.status === 'ok').length,
-    error: results.filter((r) => r.status === 'error').length,
-    sample: results.slice(0, 20).map((r) => ({
-      rowNumber: r.rowNumber,
-      status: r.status,
-      reason: r.reason,
-    })),
+    importFormat,
+    year,
+    fileName: file.name,
+    ok: storedRows.filter((r) => r.status === 'ok').length,
+    error: storedRows.filter((r) => r.status === 'error').length,
+    skip: storedRows.filter((r) => r.status === 'skip').length,
+    rows: rowDtos,
+    paymentMethods: buildPaymentMethodMappings(rowDtos, options.accounts, importFormat),
+    options,
   };
+}
+
+export async function updateImportPreviewAction(
+  input: UpdateImportPreviewInput,
+): Promise<{ updated: number }> {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'import.write');
+  const parsed = updateImportPreviewSchema.parse(input);
+  const db = getDb();
+
+  const [job] = await db
+    .select()
+    .from(importJobs)
+    .where(and(eq(importJobs.id, parsed.jobId), eq(importJobs.householdId, session.householdId)))
+    .limit(1);
+  if (!job) throw new Error('Job não encontrado');
+  if (job.status !== 'preview') {
+    throw new Error('Job não está em preview');
+  }
+
+  const existing = await db
+    .select({ id: importJobRows.id })
+    .from(importJobRows)
+    .where(
+      and(
+        eq(importJobRows.jobId, parsed.jobId),
+        inArray(
+          importJobRows.id,
+          parsed.rows.map((r) => r.id),
+        ),
+      ),
+    );
+  const allowed = new Set(existing.map((r) => r.id));
+
+  let updated = 0;
+  for (const row of parsed.rows) {
+    if (!allowed.has(row.id)) continue;
+    const payload: ParsedImportRow = {
+      occurredOn: row.occurredOn,
+      amountCents: row.amountCents,
+      type: row.type,
+      description: row.description ?? undefined,
+      category: row.category ?? undefined,
+      costCenter: row.costCenter ?? undefined,
+      account: row.account ?? undefined,
+      paymentMethod: row.paymentMethod ?? undefined,
+      tags: row.tags,
+    };
+    await db
+      .update(importJobRows)
+      .set({
+        status: row.status === 'error' ? 'error' : row.status,
+        payload,
+        reason: row.reason ?? null,
+      })
+      .where(and(eq(importJobRows.id, row.id), eq(importJobRows.jobId, parsed.jobId)));
+    updated += 1;
+  }
+
+  return { updated };
 }
 
 export async function commitImportAction(jobId: string): Promise<{
@@ -180,48 +464,49 @@ export async function commitImportAction(jobId: string): Promise<{
   await db.update(importJobs).set({ status: 'processing' }).where(eq(importJobs.id, jobId));
 
   const rows = await db.select().from(importJobRows).where(eq(importJobRows.jobId, jobId));
-  const [cats, centers, accs] = await Promise.all([
-    db.select().from(categories).where(eq(categories.householdId, session.householdId)),
-    db.select().from(costCenters).where(eq(costCenters.householdId, session.householdId)),
-    db.select().from(accounts).where(eq(accounts.householdId, session.householdId)),
-  ]);
+  const resolveContext = await buildResolveContext(session.householdId);
 
   let created = 0;
   let skipped = 0;
   let errors = 0;
 
   for (const row of rows) {
-    if (row.status !== 'ok') {
+    if (row.status === 'skip') {
+      skipped += 1;
+      continue;
+    }
+    if (row.status === 'error') {
       errors += 1;
       continue;
     }
-    const payload = row.payload as {
-      occurredOn?: string;
-      amountCents?: number;
-      type?: 'income' | 'expense';
-      description?: string;
-      category?: string;
-      costCenter?: string;
-      account?: string;
-    };
 
-    const category = cats.find(
-      (c) => c.name.toLowerCase() === (payload.category ?? '').toLowerCase(),
+    const payload = row.payload as Partial<ParsedImportRow>;
+    if (!payload.occurredOn || !payload.amountCents || !payload.type || payload.amountCents <= 0) {
+      errors += 1;
+      await db
+        .update(importJobRows)
+        .set({ status: 'error', reason: 'Payload incompleto' })
+        .where(eq(importJobRows.id, row.id));
+      continue;
+    }
+
+    const resolved = resolveEntities(
+      {
+        category: payload.category,
+        costCenter: payload.costCenter,
+        account: payload.account,
+      },
+      resolveContext,
     );
-    const center =
-      centers.find((c) => c.name.toLowerCase() === (payload.costCenter ?? '').toLowerCase()) ??
-      centers[0];
-    const account =
-      accs.find((a) => a.name.toLowerCase() === (payload.account ?? '').toLowerCase()) ?? accs[0];
 
-    if (
-      !category ||
-      !center ||
-      !account ||
-      !payload.occurredOn ||
-      !payload.amountCents ||
-      !payload.type
-    ) {
+    const costCenterId = resolved.costCenterId ?? resolveContext.costCenters[0]?.id ?? null;
+    const accountId = resolved.accountId ?? resolveContext.accounts[0]?.id ?? null;
+    let categoryId = resolved.categoryId;
+    if (!categoryId) {
+      categoryId = pickFallbackCategoryId(resolveContext, payload.type);
+    }
+
+    if (!categoryId || !costCenterId || !accountId) {
       skipped += 1;
       await db
         .update(importJobRows)
@@ -235,13 +520,14 @@ export async function commitImportAction(jobId: string): Promise<{
         ctx,
         {
           householdId: session.householdId,
-          costCenterId: center.id,
-          categoryId: category.id,
-          accountId: account.id,
+          costCenterId,
+          categoryId,
+          accountId,
           type: payload.type,
           amountCents: payload.amountCents,
           occurredOn: payload.occurredOn,
           description: payload.description,
+          tags: payload.tags,
         },
         'import',
       );

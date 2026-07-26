@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { redirect } from 'next/navigation';
 import { and, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
 import { isDemoMode } from '@tim/mocks';
+import { can } from '@tim/auth';
 import {
   shouldPromptIncomeReceipt,
   shouldPromptPendingIncomes,
@@ -158,9 +159,16 @@ export default async function AppLayout({
   }
 
   const showBanner = showSeriesIncomePrompt || showGenericIncomePrompt;
+  const canManageMembers = session ? can(session, 'members.manage') : false;
 
   return (
-    <AppShell demo={demo} userEmail={userEmail} userLabel={userLabel} ttsEnabled={ttsEnabled}>
+    <AppShell
+      demo={demo}
+      userEmail={userEmail}
+      userLabel={userLabel}
+      ttsEnabled={ttsEnabled}
+      canManageMembers={canManageMembers}
+    >
       {showBanner ? (
         <IncomeReceiptBanner
           incomeDay={incomeDay}

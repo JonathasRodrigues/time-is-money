@@ -12,6 +12,7 @@ import {
   PiggyBank,
   SlidersHorizontal,
   Upload,
+  Users,
   Wallet,
 } from 'lucide-react';
 import { JarvisDock } from '@/components/jarvis-dock';
@@ -56,10 +57,22 @@ const cadastrosNav = [
   { href: '/cadastros/accounts', label: 'Bancos e contas', icon: CreditCard },
 ] as const;
 
-const systemNav = [
-  { href: '/import-export', label: 'Importar / Exportar', icon: Upload },
-  { href: '/settings/preferences', label: 'Preferências', icon: SlidersHorizontal },
-] as const;
+type SystemNavItem = {
+  href: string;
+  label: string;
+  icon: typeof Upload;
+};
+
+function buildSystemNav(canManageMembers: boolean): SystemNavItem[] {
+  const items: SystemNavItem[] = [
+    { href: '/import-export', label: 'Importar / Exportar', icon: Upload },
+  ];
+  if (canManageMembers) {
+    items.push({ href: '/settings/members', label: 'Família', icon: Users });
+  }
+  items.push({ href: '/settings/preferences', label: 'Preferências', icon: SlidersHorizontal });
+  return items;
+}
 
 function titleFromPath(pathname: string): string {
   if (pathname.startsWith('/payments')) return 'Contas a pagar';
@@ -71,6 +84,7 @@ function titleFromPath(pathname: string): string {
   if (pathname.startsWith('/cadastros/cost-centers')) return 'Centros de custo';
   if (pathname.startsWith('/cadastros/accounts')) return 'Bancos e contas';
   if (pathname.startsWith('/cadastros')) return 'Cadastros';
+  if (pathname.startsWith('/settings/members')) return 'Família';
   if (pathname.startsWith('/settings')) return 'Preferências';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
   return 'Time is Money';
@@ -78,7 +92,7 @@ function titleFromPath(pathname: string): string {
 
 function isActivePath(pathname: string, href: string): boolean {
   if (href === '/settings/preferences') {
-    return pathname.startsWith('/settings');
+    return pathname.startsWith('/settings/preferences') || pathname === '/settings';
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -89,14 +103,17 @@ export function AppShell({
   userEmail,
   userLabel,
   ttsEnabled = false,
+  canManageMembers = false,
 }: {
   children: React.ReactNode;
   demo: boolean;
   userEmail: string;
   userLabel: string;
   ttsEnabled?: boolean;
+  canManageMembers?: boolean;
 }): React.ReactElement {
   const pathname = usePathname();
+  const systemNav = buildSystemNav(canManageMembers);
   const initials = userLabel
     .split(/[@\s._-]/)
     .filter(Boolean)
@@ -231,6 +248,11 @@ export function AppShell({
               <DropdownMenuItem asChild>
                 <Link href="/settings/preferences">Preferências</Link>
               </DropdownMenuItem>
+              {canManageMembers ? (
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/members">Família</Link>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarFooter>

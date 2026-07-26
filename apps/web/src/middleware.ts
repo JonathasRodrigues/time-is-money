@@ -20,6 +20,7 @@ export default async function middleware(req: NextRequest) {
     '/',
     '/sign-in(.*)',
     '/sign-up(.*)',
+    '/invite(.*)',
     '/api/cron(.*)',
     '/manifest.webmanifest',
     '/icons(.*)',

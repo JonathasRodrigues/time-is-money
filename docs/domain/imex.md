@@ -7,9 +7,10 @@ UI: `/import-export`
 ## Formatos suportados
 
 - **CSV** — delimitador `;` ou `,` (auto-detect)
-- **XLSX** — primeira aba da planilha
+- **XLSX flat** — primeira aba, cabeçalhos do template
+- **XLSX Contas (mensal)** — abas `Janeiro`…`Dezembro` sem cabeçalho nem data
 
-## Template de colunas
+## Template de colunas (flat)
 
 | Coluna         | Obrigatório | Exemplo                      |
 | -------------- | :---------: | ---------------------------- |
@@ -23,14 +24,30 @@ UI: `/import-export`
 
 Baixar template: `downloadTemplateAction()`.
 
+## Formato Contas (abas mensais)
+
+Detectado quando há ≥ 3 abas com nomes de mês. Abas como `Resumo`, `Receita`, `Poupança`, etc. são **ignoradas**.
+
+| Coluna (posição) | Conteúdo                             |
+| ---------------- | ------------------------------------ |
+| A                | `Fixo` / `Variável` → tags           |
+| B                | Descrição                            |
+| C                | Valor (`R$ 3,200.00` ou BR)          |
+| D                | Método de pagamento → conta sugerida |
+| E                | Categoria (mapeada para seed TIM)    |
+
+- **Data:** dia `10` do mês da aba; ano do nome do arquivo (`Contas - 2024.xlsx`) ou campo na UI
+- **Financiamento:** linhas com descrição `Financiamento` entram como `skip` (parcelas vêm de `/financings`)
+- **Cartão Jooh** → conta sugerida `Nubank PF Jooh` (usuário confirma o mapeamento método→conta na UI)
+
 ## Pipeline de importação
 
-1. Upload → `parseSpreadsheet` (SheetJS)
-2. `autoMapColumns` — mapeia cabeçalhos PT/EN
-3. `mapRows` — valida cada linha (Zod)
-4. Preview com status `ok` | `error` | `skip`
-5. Confirmação → resolve entidades + `createTransaction` por linha OK
-6. Job registrado em `import_jobs` / `import_job_rows`
+1. Upload → `detectImportFormat` → `parseSpreadsheet` **ou** `parseContasMonthlyWorkbook`
+2. Preview rico (`previewImportAction`) com todas as linhas + opções do household
+3. **Revisão editável** na UI (data, valor, categoria, conta, centro, importar/skip)
+4. `updateImportPreviewAction` persiste ajustes
+5. `commitImportAction` → `resolveEntities` (+ aliases) → `createTransaction`
+6. Categoria sem match → fallback `Outros` / `Sem categoria`
 
 ## Exportação
 

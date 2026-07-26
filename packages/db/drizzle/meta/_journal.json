@@ -43,6 +43,13 @@
       "when": 1753510000000,
       "tag": "0005_account_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1753520000000,
+      "tag": "0006_household_invitations",
+      "breakpoints": true
     }
   ]
 }

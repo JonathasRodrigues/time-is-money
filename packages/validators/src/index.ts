@@ -215,10 +215,52 @@ export const importColumnMappingSchema = z.object({
   account: z.string().optional(),
 });
 
+export const importPreviewRowUpdateSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(['ok', 'error', 'skip']),
+  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amountCents: z.number().int().positive(),
+  type: z.enum(['income', 'expense']),
+  description: z.string().max(500).optional().nullable(),
+  category: z.string().max(120).optional().nullable(),
+  costCenter: z.string().max(120).optional().nullable(),
+  account: z.string().max(120).optional().nullable(),
+  paymentMethod: z.string().max(120).optional().nullable(),
+  tags: z.array(z.string().max(40)).max(20).optional(),
+  reason: z.string().max(500).optional().nullable(),
+});
+
+export const updateImportPreviewSchema = z.object({
+  jobId: z.string().uuid(),
+  rows: z.array(importPreviewRowUpdateSchema).max(5000),
+});
+
 export const jarvisMessageSchema = z.object({
   threadId: z.string().uuid().optional(),
   content: z.string().min(1).max(4000),
   source: z.enum(['text', 'voice']).default('text'),
+});
+
+export const createHouseholdInviteSchema = z.object({
+  email: z.string().trim().email('E-mail inválido').max(255),
+  role: roleSchema,
+});
+
+export const acceptHouseholdInviteSchema = z.object({
+  token: z.string().min(16).max(128),
+});
+
+export const revokeHouseholdInviteSchema = z.object({
+  invitationId: z.string().uuid(),
+});
+
+export const updateMemberRoleSchema = z.object({
+  membershipId: z.string().uuid(),
+  role: roleSchema,
+});
+
+export const removeMemberSchema = z.object({
+  membershipId: z.string().uuid(),
 });
 
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
@@ -237,4 +279,11 @@ export type CreateFinancingInput = z.infer<typeof createFinancingSchema>;
 export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>;
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
+export type ImportPreviewRowUpdate = z.infer<typeof importPreviewRowUpdateSchema>;
+export type UpdateImportPreviewInput = z.infer<typeof updateImportPreviewSchema>;
 export type JarvisMessageInput = z.infer<typeof jarvisMessageSchema>;
+export type CreateHouseholdInviteInput = z.infer<typeof createHouseholdInviteSchema>;
+export type AcceptHouseholdInviteInput = z.infer<typeof acceptHouseholdInviteSchema>;
+export type RevokeHouseholdInviteInput = z.infer<typeof revokeHouseholdInviteSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
+export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;

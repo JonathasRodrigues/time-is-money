@@ -1008,3 +1008,19 @@ export async function createTransfer(ctx: AppContext, raw: CreateTransferInput) 
 }
 
 export { yearMonthFromIso };
+
+export {
+  acceptHouseholdInvite,
+  acceptHouseholdInviteById,
+  createHouseholdInvite,
+  listHouseholdMembers,
+  listPendingHouseholdInvites,
+  listPendingInvitesForEmail,
+  peekHouseholdInvite,
+  removeMember,
+  revokeHouseholdInvite,
+  updateMemberRole,
+  type HouseholdInviteRow,
+  type HouseholdMemberRow,
+  type PeekInviteResult,
+} from './members';

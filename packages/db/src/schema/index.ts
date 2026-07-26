@@ -13,6 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const roleEnum = pgEnum('member_role', ['admin', 'editor', 'viewer']);
+export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked']);
 export const transactionTypeEnum = pgEnum('transaction_type', ['income', 'expense']);
 export const transactionStatusEnum = pgEnum('transaction_status', ['pending', 'paid']);
 export const seriesIntervalEnum = pgEnum('series_interval', ['monthly']);
@@ -50,6 +51,28 @@ export const memberships = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [uniqueIndex('memberships_household_user_uidx').on(table.householdId, table.userId)],
+);
+
+export const householdInvitations = pgTable(
+  'household_invitations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 255 }).notNull(),
+    role: roleEnum('role').notNull().default('viewer'),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    invitedByUserId: varchar('invited_by_user_id', { length: 128 }).notNull(),
+    status: invitationStatusEnum('status').notNull().default('pending'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('household_invitations_token_hash_uidx').on(table.tokenHash),
+    index('household_invitations_household_status_idx').on(table.householdId, table.status),
+  ],
 );
 
 export const costCenters = pgTable('cost_centers', {

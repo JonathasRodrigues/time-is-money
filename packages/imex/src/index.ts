@@ -1,7 +1,10 @@
 import type { ImportColumnMapping } from '@tim/validators';
 import { importColumnMappingSchema } from '@tim/validators';
 import * as XLSX from 'xlsx';
-import { z } from 'zod';
+import { parsedImportRowSchema, type ImportRowResult } from './types';
+
+export type { ImportRowResult, ParsedImportRow } from './types';
+export { parsedImportRowSchema } from './types';
 
 export const TEMPLATE_HEADERS = [
   'data',
@@ -15,24 +18,19 @@ export const TEMPLATE_HEADERS = [
 
 export type TemplateHeader = (typeof TEMPLATE_HEADERS)[number];
 
-const rowSchema = z.object({
-  occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  amountCents: z.number().int().positive(),
-  type: z.enum(['income', 'expense']),
-  description: z.string().optional(),
-  category: z.string().optional(),
-  costCenter: z.string().optional(),
-  account: z.string().optional(),
-});
-
-export type ParsedImportRow = z.infer<typeof rowSchema>;
-
-export interface ImportRowResult {
-  rowNumber: number;
-  status: 'ok' | 'error' | 'skip';
-  data?: ParsedImportRow;
-  reason?: string;
-}
+export {
+  detectImportFormat,
+  detectImportFormatFromWorkbook,
+  extractYearFromFilename,
+  isMonthSheetName,
+  mapContasCategory,
+  mapPaymentMethodToAccount,
+  monthNumberFromSheetName,
+  parseContasAmountToCents,
+  parseContasMonthlyWorkbook,
+  shiftContasYear,
+  type ImportFormat,
+} from './contas';
 
 function detectDelimiter(sample: string): ',' | ';' {
   const commas = (sample.match(/,/g) ?? []).length;
@@ -134,7 +132,7 @@ export function mapRows(
     try {
       const amountRaw = row[mapping.amount] ?? '';
       const typeRaw = mapping.type ? row[mapping.type] : undefined;
-      const parsed = rowSchema.parse({
+      const parsed = parsedImportRowSchema.parse({
         occurredOn: normalizeDate(row[mapping.occurredOn] ?? ''),
         amountCents: parseAmountToCents(amountRaw),
         type: normalizeType(typeRaw, amountRaw),

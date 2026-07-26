@@ -465,8 +465,23 @@ export const DEFAULT_INCOME_CATEGORIES: string[] = [
 export const DEFAULT_CATEGORY_ALIASES: Record<string, string[]> = {
   Supermercado: ['mercado', 'super', 'compras'],
   Delivery: ['ifood', 'delivery', 'rappi'],
-  Transporte: ['uber', '99', 'combustivel', 'gasolina'],
-  Moradia: ['aluguel', 'condominio'],
+  Transporte: ['uber', '99', 'combustivel', 'gasolina', 'estacionamento', 'pedagio', 'nutag'],
+  Moradia: ['aluguel', 'condominio', 'luz', 'internet', 'itens casa', 'eletrodomestico'],
+  Assinaturas: [
+    'streamming',
+    'streaming',
+    'netflix',
+    'spotify',
+    'amazon prime',
+    'paramount',
+    'comunicacao',
+    'comunicação',
+  ],
+  Alimentação: ['restaurante', 'comida', 'almoco', 'almoço', 'jantar'],
+  Lazer: ['games', 'diversao', 'diversão', 'entretenimento', 'viagem'],
+  Pessoal: ['pet', 'pets', 'roupas', 'roupa', 'cosmeticos', 'cosméticos', 'presentes'],
+  'Impostos/Taxas': ['impostos', 'imposto', 'taxa', 'das', 'contador'],
+  Outros: ['sem categoria', 'outros', 'empresa'],
 };
 
 export {
@@ -503,3 +518,12 @@ export {
   type AccountKind,
   type YieldType,
 } from './wealth';
+
+export {
+  emailsMatchForInvite,
+  inviteExpiresAt,
+  INVITE_TTL_DAYS,
+  isInviteExpired,
+  MEMBER_ROLE_LABEL,
+  normalizeInviteEmail,
+} from './invites';

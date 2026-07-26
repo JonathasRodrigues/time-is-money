@@ -8,7 +8,15 @@ import {
   isClerkConfigured,
 } from '@/components/auth-shell';
 
-export default async function SignInPage(): Promise<React.ReactElement> {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect_url?: string }>;
+}): Promise<React.ReactElement> {
+  const params = await searchParams;
+  const redirectUrl =
+    params.redirect_url && params.redirect_url.startsWith('/') ? params.redirect_url : undefined;
+
   if (!isClerkConfigured()) {
     return (
       <AuthShell eyebrow="Entrar">
@@ -24,7 +32,15 @@ export default async function SignInPage(): Promise<React.ReactElement> {
     <AuthShell eyebrow="Entrar">
       <AuthCardHeader title="Entrar" description="Acesse o household com sua conta Clerk." />
       <div className="flex justify-center [&_.cl-rootBox]:w-full [&_.cl-card]:w-full [&_.cl-card]:shadow-none [&_.cl-card]:border [&_.cl-cardBox]:w-full">
-        <SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" />
+        <SignIn
+          routing="path"
+          path="/sign-in"
+          signUpUrl={
+            redirectUrl ? `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}` : '/sign-up'
+          }
+          forceRedirectUrl={redirectUrl}
+          fallbackRedirectUrl={redirectUrl ?? '/dashboard'}
+        />
       </div>
       <AuthFooterNote />
     </AuthShell>
