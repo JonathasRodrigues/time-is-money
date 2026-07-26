@@ -1,0 +1,505 @@
+export type TransactionType = 'income' | 'expense';
+
+export interface NamedEntity {
+  id: string;
+  name: string;
+}
+
+export interface CategoryEntity extends NamedEntity {
+  type: TransactionType;
+  aliases: string[];
+}
+
+export interface ResolveContext {
+  costCenters: NamedEntity[];
+  categories: CategoryEntity[];
+  accounts: Array<NamedEntity & { costCenterId: string }>;
+}
+
+export interface ResolveResult {
+  costCenterId: string | null;
+  categoryId: string | null;
+  accountId: string | null;
+  ambiguities: Array<{
+    field: 'costCenter' | 'category' | 'account';
+    options: NamedEntity[];
+  }>;
+}
+
+function normalize(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
+function scoreMatch(query: string, candidate: string): number {
+  const q = normalize(query);
+  const c = normalize(candidate);
+  if (!q || !c) return 0;
+  if (q === c) return 100;
+  if (c.includes(q) || q.includes(c)) return 80;
+  return 0;
+}
+
+function pickBest(
+  query: string | undefined,
+  entities: NamedEntity[],
+  extraNames?: (entity: NamedEntity) => string[],
+): { id: string | null; options: NamedEntity[] } {
+  if (!query) {
+    return { id: null, options: [] };
+  }
+
+  const scored = entities
+    .map((entity) => {
+      const names = [entity.name, ...(extraNames?.(entity) ?? [])];
+      const best = Math.max(...names.map((name) => scoreMatch(query, name)));
+      return { entity, best };
+    })
+    .filter((row) => row.best >= 80)
+    .sort((a, b) => b.best - a.best);
+
+  if (scored.length === 0) {
+    return { id: null, options: [] };
+  }
+
+  const top = scored[0];
+  if (!top) {
+    return { id: null, options: [] };
+  }
+
+  const ties = scored.filter((row) => row.best === top.best);
+  if (ties.length > 1) {
+    return { id: null, options: ties.map((row) => row.entity) };
+  }
+
+  return { id: top.entity.id, options: [] };
+}
+
+export function resolveEntities(
+  input: {
+    costCenter?: string;
+    category?: string;
+    account?: string;
+  },
+  context: ResolveContext,
+): ResolveResult {
+  const costCenter = pickBest(input.costCenter, context.costCenters);
+  const category = pickBest(input.category, context.categories, (entity) => {
+    const cat = entity as CategoryEntity;
+    return cat.aliases ?? [];
+  });
+  const account = pickBest(input.account, context.accounts);
+
+  const ambiguities: ResolveResult['ambiguities'] = [];
+  if (costCenter.options.length > 1) {
+    ambiguities.push({ field: 'costCenter', options: costCenter.options });
+  }
+  if (category.options.length > 1) {
+    ambiguities.push({ field: 'category', options: category.options });
+  }
+  if (account.options.length > 1) {
+    ambiguities.push({ field: 'account', options: account.options });
+  }
+
+  return {
+    costCenterId: costCenter.id,
+    categoryId: category.id,
+    accountId: account.id,
+    ambiguities,
+  };
+}
+
+export function formatBrlFromCents(cents: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(cents / 100);
+}
+
+/** Converte `YYYY-MM-DD` → `dd/mm/yyyy` para exibição. */
+export function formatIsoDateBr(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) return isoDate;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+export function addMonths(isoDate: string, months: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (y === undefined || m === undefined || d === undefined) {
+    throw new Error(`Invalid ISO date: ${isoDate}`);
+  }
+  // Âncora no dia 1 para obter ano/mês alvo sem overflow de dia (31/01 + 1 → fev, não 03/03).
+  const anchor = new Date(Date.UTC(y, m - 1 + months, 1));
+  const year = anchor.getUTCFullYear();
+  const monthIndex = anchor.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const day = Math.min(d, lastDay);
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+export type AmortizationSystem = 'price' | 'sac' | 'fixed';
+
+export interface AmortizationRow {
+  number: number;
+  dueOn: string;
+  amountCents: number;
+  interestCents: number;
+  principalCents: number;
+  balanceAfterCents: number;
+}
+
+export interface AmortizationSummary {
+  system: AmortizationSystem;
+  installmentCount: number;
+  firstInstallmentCents: number;
+  lastInstallmentCents: number;
+  totalPaidCents: number;
+  totalInterestCents: number;
+  schedule: AmortizationRow[];
+}
+
+/** Taxa mensal nominal a partir de basis points anuais (padrão bancário BR: a.a. / 12). */
+export function annualBpsToMonthlyRate(annualRateBps: number): number {
+  return annualRateBps / 10_000 / 12;
+}
+
+function roundCents(value: number): number {
+  return Math.round(value);
+}
+
+function summarizeSchedule(
+  system: AmortizationSystem,
+  schedule: AmortizationRow[],
+): AmortizationSummary {
+  if (schedule.length === 0) {
+    return {
+      system,
+      installmentCount: 0,
+      firstInstallmentCents: 0,
+      lastInstallmentCents: 0,
+      totalPaidCents: 0,
+      totalInterestCents: 0,
+      schedule: [],
+    };
+  }
+  const first = schedule[0]!;
+  const last = schedule[schedule.length - 1]!;
+  return {
+    system,
+    installmentCount: schedule.length,
+    firstInstallmentCents: first.amountCents,
+    lastInstallmentCents: last.amountCents,
+    totalPaidCents: schedule.reduce((acc, row) => acc + row.amountCents, 0),
+    totalInterestCents: schedule.reduce((acc, row) => acc + row.interestCents, 0),
+    schedule,
+  };
+}
+
+/**
+ * Tabela Price (Sistema Francês) — parcelas iguais; juros decrescentes, amortização crescente.
+ * Usado em financiamentos de veículos e muitos empréstimos pessoais no Brasil.
+ */
+export function simulatePrice(input: {
+  principalCents: number;
+  installmentCount: number;
+  annualRateBps: number;
+  firstDueOn: string;
+}): AmortizationSummary {
+  const { principalCents, installmentCount, annualRateBps, firstDueOn } = input;
+  const i = annualBpsToMonthlyRate(annualRateBps);
+  let balance = principalCents;
+
+  let pmt: number;
+  if (i === 0) {
+    pmt = roundCents(principalCents / installmentCount);
+  } else {
+    const factor = (1 + i) ** installmentCount;
+    pmt = roundCents((principalCents * (i * factor)) / (factor - 1));
+  }
+
+  const schedule: AmortizationRow[] = [];
+  for (let n = 1; n <= installmentCount; n += 1) {
+    const interestCents = roundCents(balance * i);
+    let principalPart = n === installmentCount ? balance : pmt - interestCents;
+    if (principalPart > balance) principalPart = balance;
+    const amountCents = n === installmentCount ? interestCents + principalPart : pmt;
+    balance -= principalPart;
+    if (balance < 0) balance = 0;
+    schedule.push({
+      number: n,
+      dueOn: addMonths(firstDueOn, n - 1),
+      amountCents,
+      interestCents,
+      principalCents: principalPart,
+      balanceAfterCents: balance,
+    });
+  }
+
+  return summarizeSchedule('price', schedule);
+}
+
+/**
+ * SAC (Sistema de Amortização Constante) — amortização fixa; parcelas decrescentes.
+ * Padrão típico de financiamento imobiliário no Brasil.
+ */
+export function simulateSac(input: {
+  principalCents: number;
+  installmentCount: number;
+  annualRateBps: number;
+  firstDueOn: string;
+}): AmortizationSummary {
+  const { principalCents, installmentCount, annualRateBps, firstDueOn } = input;
+  const i = annualBpsToMonthlyRate(annualRateBps);
+  const amortization = roundCents(principalCents / installmentCount);
+  let balance = principalCents;
+  const schedule: AmortizationRow[] = [];
+
+  for (let n = 1; n <= installmentCount; n += 1) {
+    const interestCents = roundCents(balance * i);
+    const principalPart = n === installmentCount ? balance : amortization;
+    const amountCents = interestCents + principalPart;
+    balance -= principalPart;
+    if (balance < 0) balance = 0;
+    schedule.push({
+      number: n,
+      dueOn: addMonths(firstDueOn, n - 1),
+      amountCents,
+      interestCents,
+      principalCents: principalPart,
+      balanceAfterCents: balance,
+    });
+  }
+
+  return summarizeSchedule('sac', schedule);
+}
+
+/** Parcela fixa informada pelo usuário (sem recalcular juros). */
+export function simulateFixed(input: {
+  principalCents: number;
+  installmentCount: number;
+  installmentAmountCents: number;
+  firstDueOn: string;
+}): AmortizationSummary {
+  const { principalCents, installmentCount, installmentAmountCents, firstDueOn } = input;
+  let balance = principalCents;
+  const schedule: AmortizationRow[] = [];
+
+  for (let n = 1; n <= installmentCount; n += 1) {
+    const principalPart = Math.min(installmentAmountCents, balance);
+    const interestCents = Math.max(0, installmentAmountCents - principalPart);
+    balance -= principalPart;
+    schedule.push({
+      number: n,
+      dueOn: addMonths(firstDueOn, n - 1),
+      amountCents: installmentAmountCents,
+      interestCents,
+      principalCents: principalPart,
+      balanceAfterCents: Math.max(0, balance),
+    });
+  }
+
+  return summarizeSchedule('fixed', schedule);
+}
+
+export function buildAmortizationSchedule(input: {
+  system: AmortizationSystem;
+  principalCents: number;
+  installmentCount: number;
+  firstDueOn: string;
+  annualRateBps?: number;
+  installmentAmountCents?: number;
+}): AmortizationSummary {
+  if (input.system === 'price') {
+    if (input.annualRateBps === undefined) {
+      throw new Error('annualRateBps é obrigatório para Price');
+    }
+    return simulatePrice({
+      principalCents: input.principalCents,
+      installmentCount: input.installmentCount,
+      annualRateBps: input.annualRateBps,
+      firstDueOn: input.firstDueOn,
+    });
+  }
+  if (input.system === 'sac') {
+    if (input.annualRateBps === undefined) {
+      throw new Error('annualRateBps é obrigatório para SAC');
+    }
+    return simulateSac({
+      principalCents: input.principalCents,
+      installmentCount: input.installmentCount,
+      annualRateBps: input.annualRateBps,
+      firstDueOn: input.firstDueOn,
+    });
+  }
+  if (input.installmentAmountCents === undefined) {
+    throw new Error('installmentAmountCents é obrigatório para parcela fixa');
+  }
+  return simulateFixed({
+    principalCents: input.principalCents,
+    installmentCount: input.installmentCount,
+    installmentAmountCents: input.installmentAmountCents,
+    firstDueOn: input.firstDueOn,
+  });
+}
+
+/** @deprecated Prefer buildAmortizationSchedule — mantido para compatibilidade. */
+export function buildInstallmentSchedule(input: {
+  firstDueOn: string;
+  installmentCount: number;
+  installmentAmountCents: number;
+}): Array<{ number: number; dueOn: string; amountCents: number }> {
+  return simulateFixed({
+    principalCents: input.installmentAmountCents * input.installmentCount,
+    installmentCount: input.installmentCount,
+    installmentAmountCents: input.installmentAmountCents,
+    firstDueOn: input.firstDueOn,
+  }).schedule.map(({ number, dueOn, amountCents }) => ({
+    number,
+    dueOn,
+    amountCents,
+  }));
+}
+
+/**
+ * Recalcula o cronograma restante após amortização extraordinária (100% no principal).
+ * - Price / parcela fixa: mantém o valor da parcela e reduz o prazo.
+ * - SAC: mantém a amortização periódica e reduz o prazo.
+ */
+export function rebuildRemainingSchedule(input: {
+  system: AmortizationSystem;
+  balanceCents: number;
+  firstDueOn: string;
+  annualRateBps?: number;
+  /** Valor da parcela a manter (Price / fixed). */
+  installmentAmountCents?: number;
+  /** Amortização periódica a manter (SAC). */
+  amortizationCents?: number;
+  maxInstallments?: number;
+}): AmortizationSummary {
+  const balanceCents = Math.max(0, Math.floor(input.balanceCents));
+  if (balanceCents === 0) {
+    return summarizeSchedule(input.system, []);
+  }
+
+  const maxInstallments = input.maxInstallments ?? 600;
+  const i =
+    input.annualRateBps != null && input.annualRateBps > 0
+      ? annualBpsToMonthlyRate(input.annualRateBps)
+      : 0;
+
+  if (input.system === 'sac') {
+    const amortization =
+      input.amortizationCents != null && input.amortizationCents > 0
+        ? input.amortizationCents
+        : roundCents(balanceCents / Math.min(12, maxInstallments));
+    let balance = balanceCents;
+    const schedule: AmortizationRow[] = [];
+    for (let n = 1; n <= maxInstallments && balance > 0; n += 1) {
+      const interestCents = roundCents(balance * i);
+      const principalPart = Math.min(balance, amortization);
+      const amountCents = interestCents + principalPart;
+      balance -= principalPart;
+      schedule.push({
+        number: n,
+        dueOn: addMonths(input.firstDueOn, n - 1),
+        amountCents,
+        interestCents,
+        principalCents: principalPart,
+        balanceAfterCents: Math.max(0, balance),
+      });
+    }
+    return summarizeSchedule('sac', schedule);
+  }
+
+  const pmt = input.installmentAmountCents;
+  if (pmt == null || pmt <= 0) {
+    throw new Error('installmentAmountCents é obrigatório para rebuild Price/fixo');
+  }
+
+  let balance = balanceCents;
+  const schedule: AmortizationRow[] = [];
+  for (let n = 1; n <= maxInstallments && balance > 0; n += 1) {
+    const interestCents = roundCents(balance * i);
+    let principalPart = pmt - interestCents;
+    if (principalPart <= 0) {
+      // Parcela não cobre juros: quita o que der do principal neste ciclo.
+      principalPart = Math.min(balance, Math.max(0, pmt));
+    }
+    if (principalPart > balance) principalPart = balance;
+    const amountCents = interestCents + principalPart;
+    balance -= principalPart;
+    schedule.push({
+      number: n,
+      dueOn: addMonths(input.firstDueOn, n - 1),
+      amountCents,
+      interestCents,
+      principalCents: principalPart,
+      balanceAfterCents: Math.max(0, balance),
+    });
+  }
+
+  return summarizeSchedule(input.system === 'fixed' ? 'fixed' : 'price', schedule);
+}
+
+export const DEFAULT_EXPENSE_CATEGORIES: Array<{ name: string; children?: string[] }> = [
+  { name: 'Moradia' },
+  { name: 'Alimentação', children: ['Supermercado', 'Delivery'] },
+  { name: 'Transporte' },
+  { name: 'Saúde' },
+  { name: 'Educação' },
+  { name: 'Lazer' },
+  { name: 'Assinaturas' },
+  { name: 'Impostos/Taxas' },
+  { name: 'Pessoal' },
+  { name: 'Outros' },
+];
+
+export const DEFAULT_INCOME_CATEGORIES: string[] = [
+  'Salário',
+  'Freelance',
+  'Rendimentos',
+  'Reembolso',
+  'Outros',
+];
+
+export const DEFAULT_CATEGORY_ALIASES: Record<string, string[]> = {
+  Supermercado: ['mercado', 'super', 'compras'],
+  Delivery: ['ifood', 'delivery', 'rappi'],
+  Transporte: ['uber', '99', 'combustivel', 'gasolina'],
+  Moradia: ['aluguel', 'condominio'],
+};
+
+export {
+  analyzeCategoryAttention,
+  type AttentionKind,
+  type AttentionMonthBucket,
+  type AttentionSeverity,
+  type AttentionSignal,
+  type CategoryMonthPoint,
+} from './attention';
+
+export {
+  dueOnForMonth,
+  estimatePayableCents,
+  incomeDueOnForMonth,
+  PAYABLE_KIND_LABEL,
+  resolvePayableKind,
+  shiftYearMonth,
+  shouldPromptIncomeReceipt,
+  shouldPromptPendingIncomes,
+  suggestAverageAmountCents,
+  transactionStatusLabel,
+  yearMonthFromIso,
+  type PayableKind,
+} from './payments';
+
+export {
+  ACCOUNT_KIND_LABEL,
+  assertTransferAllowed,
+  estimateMonthlyYieldCents,
+  formatTransferRouteLabel,
+  formatYieldLabel,
+  YIELD_TYPE_LABEL,
+  type AccountKind,
+  type YieldType,
+} from './wealth';

@@ -1,0 +1,33 @@
+{
+  "name": "time-is-money",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@tim/web",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "pnpm --filter @tim/web test:e2e",
+    "db:generate": "pnpm --filter @tim/db generate",
+    "db:migrate": "pnpm --filter @tim/db migrate",
+    "db:studio": "pnpm --filter @tim/db studio",
+    "demo:seed": "pnpm --filter @tim/mocks seed",
+    "dev:demo": "pnpm demo:seed && DEMO_MODE=1 pnpm --filter @tim/web dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@types/node": "^26.1.1",
+    "lefthook": "^1.11.6",
+    "prettier": "^3.5.3",
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}

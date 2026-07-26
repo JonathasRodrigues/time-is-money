@@ -1,0 +1,7 @@
+**/*.md
+docs
+.github
+**/*.test.ts
+**/*.spec.ts
+playwright-report
+coverage

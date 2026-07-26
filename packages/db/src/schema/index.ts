@@ -1,0 +1,386 @@
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
+
+export const roleEnum = pgEnum('member_role', ['admin', 'editor', 'viewer']);
+export const transactionTypeEnum = pgEnum('transaction_type', ['income', 'expense']);
+export const transactionStatusEnum = pgEnum('transaction_status', ['pending', 'paid']);
+export const seriesIntervalEnum = pgEnum('series_interval', ['monthly']);
+export const installmentStatusEnum = pgEnum('installment_status', ['pending', 'paid', 'skipped']);
+export const amortizationSystemEnum = pgEnum('amortization_system', ['price', 'sac', 'fixed']);
+export const importStatusEnum = pgEnum('import_status', [
+  'pending',
+  'preview',
+  'processing',
+  'completed',
+  'failed',
+]);
+export const importRowStatusEnum = pgEnum('import_row_status', ['ok', 'error', 'skip']);
+export const messageRoleEnum = pgEnum('message_role', ['user', 'assistant', 'system']);
+export const messageSourceEnum = pgEnum('message_source', ['text', 'voice']);
+
+export const households = pgTable('households', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 160 }).notNull(),
+  clerkOrgId: varchar('clerk_org_id', { length: 128 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const memberships = pgTable(
+  'memberships',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    email: varchar('email', { length: 255 }),
+    role: roleEnum('role').notNull().default('viewer'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('memberships_household_user_uidx').on(table.householdId, table.userId)],
+);
+
+export const costCenters = pgTable('cost_centers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  color: varchar('color', { length: 32 }),
+  isSystem: boolean('is_system').notNull().default(false),
+  isArchived: boolean('is_archived').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const categories = pgTable('categories', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id'),
+  name: varchar('name', { length: 120 }).notNull(),
+  type: transactionTypeEnum('type').notNull(),
+  isSystem: boolean('is_system').notNull().default(false),
+  isArchived: boolean('is_archived').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const categoryAliases = pgTable('category_aliases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  categoryId: uuid('category_id')
+    .notNull()
+    .references(() => categories.id, { onDelete: 'cascade' }),
+  alias: varchar('alias', { length: 120 }).notNull(),
+});
+
+export const accountKindEnum = pgEnum('account_kind', ['cash', 'checking', 'investment_pot']);
+export const yieldTypeEnum = pgEnum('yield_type', ['none', 'cdi', 'fixed_annual']);
+
+export const institutions = pgTable('institutions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  isArchived: boolean('is_archived').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const accounts = pgTable('accounts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  costCenterId: uuid('cost_center_id')
+    .notNull()
+    .references(() => costCenters.id, { onDelete: 'cascade' }),
+  institutionId: uuid('institution_id').references(() => institutions.id, {
+    onDelete: 'set null',
+  }),
+  parentAccountId: uuid('parent_account_id'),
+  name: varchar('name', { length: 120 }).notNull(),
+  kind: accountKindEnum('kind').notNull().default('checking'),
+  /** Saldo informado (snapshot manual). */
+  balanceCents: integer('balance_cents').notNull().default(0),
+  yieldType: yieldTypeEnum('yield_type').notNull().default('none'),
+  /**
+   * CDI: bps do CDI (10000 = 100% CDI).
+   * fixed_annual: taxa a.a. em bps (1200 = 12% a.a.).
+   */
+  yieldBps: integer('yield_bps'),
+  isArchived: boolean('is_archived').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const accountTransfers = pgTable(
+  'account_transfers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    fromAccountId: uuid('from_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'restrict' }),
+    toAccountId: uuid('to_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'restrict' }),
+    amountCents: integer('amount_cents').notNull(),
+    occurredOn: varchar('occurred_on', { length: 10 }).notNull(),
+    description: varchar('description', { length: 500 }),
+    createdBy: varchar('created_by', { length: 128 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('account_transfers_household_occurred_idx').on(table.householdId, table.occurredOn),
+  ],
+);
+
+export const transactionSeries = pgTable('transaction_series', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  costCenterId: uuid('cost_center_id')
+    .notNull()
+    .references(() => costCenters.id),
+  categoryId: uuid('category_id')
+    .notNull()
+    .references(() => categories.id),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.id),
+  type: transactionTypeEnum('type').notNull().default('expense'),
+  description: varchar('description', { length: 500 }).notNull(),
+  interval: seriesIntervalEnum('interval').notNull().default('monthly'),
+  dueDay: integer('due_day').notNull(),
+  defaultAmountCents: integer('default_amount_cents'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const transactions = pgTable(
+  'transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    costCenterId: uuid('cost_center_id')
+      .notNull()
+      .references(() => costCenters.id),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => categories.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    type: transactionTypeEnum('type').notNull(),
+    status: transactionStatusEnum('status').notNull().default('paid'),
+    amountCents: integer('amount_cents'),
+    occurredOn: varchar('occurred_on', { length: 10 }).notNull(),
+    dueOn: varchar('due_on', { length: 10 }),
+    paidOn: varchar('paid_on', { length: 10 }),
+    description: varchar('description', { length: 500 }),
+    notesEncrypted: text('notes_encrypted'),
+    tags: jsonb('tags').$type<string[]>().default([]),
+    source: varchar('source', { length: 32 }).notNull().default('manual'),
+    seriesId: uuid('series_id').references(() => transactionSeries.id, {
+      onDelete: 'set null',
+    }),
+    installmentId: uuid('installment_id'),
+    duplicateHash: varchar('duplicate_hash', { length: 64 }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdBy: varchar('created_by', { length: 128 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('transactions_installment_uidx').on(table.installmentId)],
+);
+
+export const financings = pgTable('financings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  costCenterId: uuid('cost_center_id')
+    .notNull()
+    .references(() => costCenters.id),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.id),
+  name: varchar('name', { length: 160 }).notNull(),
+  institution: varchar('institution', { length: 160 }),
+  principalCents: integer('principal_cents').notNull(),
+  installmentCount: integer('installment_count').notNull(),
+  installmentAmountCents: integer('installment_amount_cents').notNull(),
+  annualRateBps: integer('annual_rate_bps'),
+  amortizationSystem: amortizationSystemEnum('amortization_system').notNull().default('fixed'),
+  firstDueOn: varchar('first_due_on', { length: 10 }).notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const installments = pgTable('installments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  financingId: uuid('financing_id')
+    .notNull()
+    .references(() => financings.id, { onDelete: 'cascade' }),
+  number: integer('number').notNull(),
+  dueOn: varchar('due_on', { length: 10 }).notNull(),
+  amountCents: integer('amount_cents').notNull(),
+  interestCents: integer('interest_cents').notNull().default(0),
+  principalCents: integer('principal_cents').notNull().default(0),
+  balanceAfterCents: integer('balance_after_cents').notNull().default(0),
+  status: installmentStatusEnum('status').notNull().default('pending'),
+  paidOn: varchar('paid_on', { length: 10 }),
+  transactionId: uuid('transaction_id').references(() => transactions.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const auditLogs = pgTable('audit_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 128 }).notNull(),
+  action: varchar('action', { length: 64 }).notNull(),
+  resourceType: varchar('resource_type', { length: 64 }).notNull(),
+  resourceId: varchar('resource_id', { length: 64 }),
+  source: varchar('source', { length: 32 }).notNull().default('app'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const userPreferences = pgTable(
+  'user_preferences',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    defaultCostCenterId: uuid('default_cost_center_id'),
+    defaultAccountId: uuid('default_account_id'),
+    emailDueReminders: boolean('email_due_reminders').notNull().default(true),
+    reminderWindowsDays: jsonb('reminder_windows_days').$type<number[]>().default([7, 3, 1]),
+    weeklySummary: boolean('weekly_summary').notNull().default(false),
+    ttsEnabled: boolean('tts_enabled').notNull().default(false),
+    /** Dia do mês (1–28) em que costuma cair o recebimento (salário etc.). */
+    incomeDay: integer('income_day'),
+    /** Último mês (YYYY-MM) em que o usuário confirmou o recebimento. */
+    lastIncomeConfirmedMonth: varchar('last_income_confirmed_month', { length: 7 }),
+    /** Data (YYYY-MM-DD) em que o usuário adiou o prompt (“ainda não”). */
+    incomePromptSnoozedOn: varchar('income_prompt_snoozed_on', { length: 10 }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('user_prefs_household_user_uidx').on(table.householdId, table.userId)],
+);
+
+export const notificationOutbox = pgTable(
+  'notification_outbox',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 128 }).notNull(),
+    kind: varchar('kind', { length: 64 }).notNull(),
+    referenceId: varchar('reference_id', { length: 64 }).notNull(),
+    windowDays: integer('window_days').notNull(),
+    sentOn: varchar('sent_on', { length: 10 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('notification_outbox_uidx').on(
+      table.userId,
+      table.kind,
+      table.referenceId,
+      table.windowDays,
+      table.sentOn,
+    ),
+  ],
+);
+
+export const jarvisThreads = pgTable('jarvis_threads', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 128 }).notNull(),
+  title: varchar('title', { length: 160 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const jarvisMessages = pgTable('jarvis_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  threadId: uuid('thread_id')
+    .notNull()
+    .references(() => jarvisThreads.id, { onDelete: 'cascade' }),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  role: messageRoleEnum('role').notNull(),
+  source: messageSourceEnum('source').notNull().default('text'),
+  content: text('content').notNull(),
+  intent: jsonb('intent').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const importJobs = pgTable('import_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 128 }).notNull(),
+  status: importStatusEnum('status').notNull().default('pending'),
+  fileName: varchar('file_name', { length: 255 }),
+  format: varchar('format', { length: 16 }).notNull(),
+  mapping: jsonb('mapping').$type<Record<string, string>>().default({}),
+  errorSummary: text('error_summary'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
+export const importJobRows = pgTable('import_job_rows', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  jobId: uuid('job_id')
+    .notNull()
+    .references(() => importJobs.id, { onDelete: 'cascade' }),
+  rowNumber: integer('row_number').notNull(),
+  status: importRowStatusEnum('status').notNull(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().default({}),
+  reason: text('reason'),
+});
+
+export const exportJobs = pgTable('export_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  householdId: uuid('household_id')
+    .notNull()
+    .references(() => households.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 128 }).notNull(),
+  format: varchar('format', { length: 16 }).notNull(),
+  filters: jsonb('filters').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
