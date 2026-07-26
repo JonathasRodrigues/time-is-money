@@ -44,20 +44,30 @@ export async function getAuthSession(): Promise<AuthSession | null> {
     return getDemoSession(membership.householdId);
   }
 
-  const { auth, currentUser } = await import('@clerk/nextjs/server');
+  const { auth, clerkClient, currentUser } = await import('@clerk/nextjs/server');
   const session = await auth();
   if (!session.userId) {
     return null;
   }
 
-  const user = await currentUser();
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
+  // currentUser() pode vir cacheado; Backend API é a fonte de verdade do MFA.
+  const client = await clerkClient();
+  const backendUser = await client.users.getUser(session.userId);
+  const cachedUser = await currentUser();
+  const email =
+    backendUser.primaryEmailAddress?.emailAddress ??
+    cachedUser?.primaryEmailAddress?.emailAddress ??
+    null;
 
   const claims = session.sessionClaims as Record<string, unknown> | null;
   const mfaEnabled =
+    process.env.DEMO_BYPASS_MFA === '1' ||
     Boolean(claims?.is_mfa ?? claims?.mfa) ||
-    Boolean(user?.twoFactorEnabled) ||
-    process.env.DEMO_BYPASS_MFA === '1';
+    Boolean(backendUser.twoFactorEnabled) ||
+    Boolean(backendUser.totpEnabled) ||
+    Boolean(backendUser.backupCodeEnabled) ||
+    Boolean(cachedUser?.twoFactorEnabled) ||
+    Boolean(cachedUser?.totpEnabled);
 
   if (!env.DATABASE_URL) {
     return {
