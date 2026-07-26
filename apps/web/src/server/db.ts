@@ -61,9 +61,7 @@ export async function getAuthSession(): Promise<AuthSession | null> {
 
   const claims = session.sessionClaims as Record<string, unknown> | null;
   const socialCount =
-    (backendUser.externalAccounts?.length ?? 0) ||
-    (cachedUser?.verifiedExternalAccounts?.length ?? 0) ||
-    (cachedUser?.externalAccounts?.length ?? 0);
+    (backendUser.externalAccounts?.length ?? 0) || (cachedUser?.externalAccounts?.length ?? 0);
   const mfaEnabled = resolveMfaSatisfied({
     bypass: process.env.DEMO_BYPASS_MFA === '1',
     claimMfa: Boolean(claims?.is_mfa ?? claims?.mfa),
