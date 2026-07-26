@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm turbo run build --filter=@tim/web",
+  "ignoreCommand": "cd ../.. && npx turbo-ignore @tim/web",
   "crons": [
     {
       "path": "/api/cron/due-reminders",

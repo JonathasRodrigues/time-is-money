@@ -88,12 +88,11 @@ pnpm db:studio    # explorar banco
 ## Deploy (Vercel)
 
 1. Importe o repositório na Vercel.
-2. **Root Directory:** raiz do monorepo.
-3. **Framework:** Next.js — app em `apps/web`.
+2. **Root Directory:** `apps/web` (se deixar a raiz, o site sobe com 404).
+3. **Framework:** Next.js.
 4. Configure todas as env vars do `.env.example`.
-5. Adicione cron job para lembretes (ver `docs/ops/vercel.md`).
-
-Build command sugerido: `pnpm build` (Turbo builda `@tim/web` e dependências).
+5. Cron de lembretes já está em `apps/web/vercel.json` (ver `docs/ops/vercel.md`).
+6. Após o deploy: `DATABASE_URL=<prod> pnpm db:migrate`.
 
 ## Estrutura
 

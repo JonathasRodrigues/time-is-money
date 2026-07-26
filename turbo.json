@@ -1,5 +1,22 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "CLERK_SECRET_KEY",
+    "ENCRYPTION_SECRET",
+    "CRON_SECRET",
+    "RESEND_API_KEY",
+    "RESEND_FROM_EMAIL",
+    "OPENAI_API_KEY",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_CLERK_SIGN_IN_URL",
+    "NEXT_PUBLIC_CLERK_SIGN_UP_URL",
+    "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL",
+    "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "DEMO_MODE",
+    "DEMO_BYPASS_MFA"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -4,14 +4,16 @@ Deploy e configuração em produção.
 
 ## Projeto
 
-| Setting        | Valor                              |
-| -------------- | ---------------------------------- |
-| Framework      | Next.js                            |
-| Root Directory | `/` (monorepo root)                |
-| App path       | `apps/web`                         |
-| Install        | `pnpm install`                     |
-| Build          | `pnpm build`                       |
-| Output         | Next default (`.next` em apps/web) |
+| Setting        | Valor                                                   |
+| -------------- | ------------------------------------------------------- |
+| Framework      | Next.js                                                 |
+| Root Directory | `apps/web` (obrigatório — senão deploy dá 404)          |
+| App path       | `apps/web`                                              |
+| Install        | `cd ../.. && pnpm install` (via `apps/web/vercel.json`) |
+| Build          | `cd ../.. && pnpm turbo run build --filter=@tim/web`    |
+| Output         | Next default (`.next` em apps/web)                      |
+
+> Se o Root Directory ficar na raiz do monorepo, o build do Turbo passa mas a Vercel não encontra as rotas Next → `NOT_FOUND` / 404.
 
 ## Node
 
