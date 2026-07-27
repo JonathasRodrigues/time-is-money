@@ -717,7 +717,7 @@ export async function payTransactionsBulk(ctx: AppContext, raw: PayTransactionsB
     const row = await payTransaction(ctx, {
       householdId: session.householdId,
       transactionId: item.transactionId,
-      paidOn: input.paidOn,
+      paidOn: item.paidOn,
       amountCents: item.amountCents,
     });
     results.push(row);
@@ -727,7 +727,6 @@ export async function payTransactionsBulk(ctx: AppContext, raw: PayTransactionsB
     action: 'pay_bulk',
     resourceType: 'transaction',
     metadata: {
-      paidOn: input.paidOn,
       count: input.items.length,
       transactionIds: input.items.map((item) => item.transactionId),
     },

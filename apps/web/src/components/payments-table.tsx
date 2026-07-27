@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
   formatBrlFromCents,
   formatCentsForBrInput,
@@ -10,6 +10,8 @@ import {
 import type { PayableKind } from '@tim/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
+import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
@@ -50,6 +52,10 @@ function amountInputDefault(row: PayableRow): string {
   return cents != null ? formatCentsForBrInput(cents) : '';
 }
 
+function defaultPaidOn(row: PayableRow, today: string): string {
+  return row.dueOn ?? today;
+}
+
 export function PaymentsTable({
   rows,
   today,
@@ -60,14 +66,27 @@ export function PaymentsTable({
   mode?: 'pay' | 'receive';
 }): React.ReactElement {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [paidOns, setPaidOns] = useState<Record<string, string>>({});
+  const [applyAllDate, setApplyAllDate] = useState('');
   const [pending, startTransition] = useTransition();
   const isReceive = mode === 'receive';
   const actionVerb = isReceive ? 'Receber' : 'Pagar';
   const actionGerund = isReceive ? 'Recebendo' : 'Pagando';
   const actionPast = isReceive ? 'Recebido' : 'Pago';
+  const dateLabel = isReceive ? 'Recebido em' : 'Pago em';
   const bulkSuccess = isReceive
     ? (count: number) => (count === 1 ? 'Recebimento registrado' : 'Recebimentos registrados')
     : (count: number) => (count === 1 ? 'Pagamento registrado' : 'Pagamentos registrados');
+
+  useEffect(() => {
+    setPaidOns((prev) => {
+      const next: Record<string, string> = {};
+      for (const row of rows) {
+        next[row.id] = prev[row.id] ?? defaultPaidOn(row, today);
+      }
+      return next;
+    });
+  }, [rows, today]);
 
   const selectableIds = useMemo(
     () => rows.filter((row) => payAmountCents(row) != null).map((row) => row.id),
@@ -97,20 +116,36 @@ export function PaymentsTable({
     });
   }
 
+  function applyDateToSelected() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(applyAllDate)) return;
+    setPaidOns((prev) => {
+      const next = { ...prev };
+      for (const row of selectedRows) {
+        next[row.id] = applyAllDate;
+      }
+      return next;
+    });
+  }
+
   function paySelected() {
     const items = selectedRows
       .map((row) => {
         const amountCents = payAmountCents(row);
         if (amountCents == null) return null;
-        return { transactionId: row.id, amountCents };
+        const paidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) return null;
+        return { transactionId: row.id, amountCents, paidOn };
       })
-      .filter((item): item is { transactionId: string; amountCents: number } => item != null);
+      .filter(
+        (item): item is { transactionId: string; amountCents: number; paidOn: string } =>
+          item != null,
+      );
 
     if (items.length === 0) return;
 
     startTransition(async () => {
       try {
-        await runWithToast(() => payTransactionsBulkAction({ paidOn: today, items }), {
+        await runWithToast(() => payTransactionsBulkAction({ items }), {
           loading: `${actionGerund} ${items.length}…`,
           success: bulkSuccess(items.length),
         });
@@ -124,7 +159,7 @@ export function PaymentsTable({
   return (
     <div className="space-y-3">
       {selected.size > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 mx-5">
+        <div className="mx-5 flex flex-col gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <p className="text-sm">
             <span className="font-medium">{selected.size}</span>
             <span className="text-muted-foreground">
@@ -136,7 +171,32 @@ export function PaymentsTable({
               {formatBrlFromCents(selectedTotalCents)}
             </span>
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="grid gap-1">
+              <Label htmlFor="pay-apply-all" className="text-[11px] text-muted-foreground">
+                Aplicar {dateLabel.toLowerCase()} em todas
+              </Label>
+              <div className="flex items-center gap-1.5">
+                <DateInput
+                  id="pay-apply-all"
+                  value={
+                    applyAllDate ||
+                    (selectedRows[0] ? defaultPaidOn(selectedRows[0], today) : today)
+                  }
+                  onValueChange={setApplyAllDate}
+                  className="h-8 w-[9.5rem]"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={applyDateToSelected}
+                >
+                  Aplicar
+                </Button>
+              </div>
+            </div>
             <Button
               type="button"
               size="sm"
@@ -185,6 +245,7 @@ export function PaymentsTable({
             rows.map((row) => {
               const overdue = (row.dueOn ?? '') < today;
               const canSelect = payAmountCents(row) != null;
+              const rowPaidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
               return (
                 <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
                   <TableCell>
@@ -229,16 +290,33 @@ export function PaymentsTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <form className="flex flex-wrap items-center justify-end gap-1.5">
+                    <form className="flex flex-wrap items-end justify-end gap-1.5">
                       <input type="hidden" name="transactionId" value={row.id} />
-                      <input type="hidden" name="paidOn" value={today} />
-                      <MoneyInput
-                        name="amount"
-                        min="0"
-                        placeholder="Valor"
-                        defaultValue={amountInputDefault(row)}
-                        className="h-8 w-28"
-                      />
+                      <div className="grid gap-0.5">
+                        <span className="text-[10px] text-muted-foreground">{dateLabel}</span>
+                        <DateInput
+                          name="paidOn"
+                          value={rowPaidOn}
+                          onValueChange={(iso) => {
+                            setPaidOns((prev) => ({
+                              ...prev,
+                              [row.id]: iso || defaultPaidOn(row, today),
+                            }));
+                          }}
+                          className="h-8 w-[9.5rem]"
+                          required
+                        />
+                      </div>
+                      <div className="grid gap-0.5">
+                        <span className="text-[10px] text-muted-foreground">Valor</span>
+                        <MoneyInput
+                          name="amount"
+                          min="0"
+                          placeholder="Valor"
+                          defaultValue={amountInputDefault(row)}
+                          className="h-8 w-28"
+                        />
+                      </div>
                       <SubmitButton
                         size="sm"
                         variant="outline"

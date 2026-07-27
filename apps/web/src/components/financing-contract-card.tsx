@@ -42,6 +42,7 @@ export function FinancingContractCard({
   firstDueOn,
   pendingCount,
   remainingCents,
+  amortizeCents,
   paidCents,
   progress,
   nextPending,
@@ -60,6 +61,7 @@ export function FinancingContractCard({
   firstDueOn: string;
   pendingCount: number;
   remainingCents: number;
+  amortizeCents: number;
   paidCents: number;
   progress: number;
   nextPending: FinancingInstallmentRow | null;
@@ -149,12 +151,21 @@ export function FinancingContractCard({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:text-right">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:text-right">
             <div className="rounded-lg border bg-muted/30 px-3 py-2 sm:min-w-[8.5rem]">
               <p className="text-[11px] text-muted-foreground">Restante</p>
               <p className="font-semibold tabular-nums">{formatBrlFromCents(remainingCents)}</p>
               <p className="text-[11px] text-muted-foreground tabular-nums">
                 {pendingCount} parcela{pendingCount === 1 ? '' : 's'}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 sm:min-w-[8.5rem]">
+              <p className="text-[11px] text-muted-foreground">Se amortizar</p>
+              <p className="font-semibold tabular-nums">{formatBrlFromCents(amortizeCents)}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {remainingCents > amortizeCents
+                  ? `evita ${formatBrlFromCents(remainingCents - amortizeCents)}`
+                  : 'só principal'}
               </p>
             </div>
             <div className="rounded-lg border bg-muted/30 px-3 py-2 sm:min-w-[8.5rem]">

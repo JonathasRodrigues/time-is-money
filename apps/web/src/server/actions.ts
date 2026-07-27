@@ -468,14 +468,12 @@ export async function payTransactionAction(formData: FormData) {
 }
 
 export async function payTransactionsBulkAction(input: {
-  paidOn: string;
-  items: Array<{ transactionId: string; amountCents?: number }>;
+  items: Array<{ transactionId: string; amountCents?: number; paidOn: string }>;
 }) {
   const ctx = await createAppContext();
   const session = requireSession(ctx.session);
   await payTransactionsBulk(ctx, {
     householdId: session.householdId,
-    paidOn: input.paidOn,
     items: input.items,
   });
   revalidateApp();

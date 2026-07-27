@@ -111,12 +111,12 @@ export const payTransactionSchema = z.object({
 
 export const payTransactionsBulkSchema = z.object({
   householdId: z.string().uuid(),
-  paidOn: isoDateSchema,
   items: z
     .array(
       z.object({
         transactionId: z.string().uuid(),
         amountCents: moneyCentsSchema.optional(),
+        paidOn: isoDateSchema,
       }),
     )
     .min(1)

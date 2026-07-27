@@ -56,6 +56,7 @@ export default async function FinancingsPage({
 
   let totalRemaining = 0;
   let totalPaid = 0;
+  let totalAmortizeCents = 0;
   let totalPendingInstallments = 0;
 
   const contracts = filteredList.map((financing) => {
@@ -65,8 +66,14 @@ export default async function FinancingsPage({
       .filter((i) => i.status === 'paid')
       .reduce((acc, i) => acc + i.amountCents, 0);
     const remainingCents = pending.reduce((acc, i) => acc + i.amountCents, 0);
+    const amortizeCents = pending.reduce((acc, i) => {
+      const principal =
+        i.principalCents > 0 ? i.principalCents : Math.max(0, i.amountCents - i.interestCents);
+      return acc + principal;
+    }, 0);
     totalRemaining += remainingCents;
     totalPaid += paidCents;
+    totalAmortizeCents += amortizeCents;
     totalPendingInstallments += pending.length;
     const next = pending[0] ?? null;
     const progress =
@@ -85,6 +92,7 @@ export default async function FinancingsPage({
       pending,
       paidCents,
       remainingCents,
+      amortizeCents,
       progress,
       system,
       rateLabel,
@@ -120,7 +128,7 @@ export default async function FinancingsPage({
       />
 
       {filteredList.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-xl border bg-card px-4 py-3.5 shadow-sm">
             <p className="text-xs text-muted-foreground">Contratos</p>
             <p className="mt-1.5 text-xl font-semibold tabular-nums">{filteredList.length}</p>
@@ -129,6 +137,19 @@ export default async function FinancingsPage({
             <p className="text-xs text-muted-foreground">Restante a pagar</p>
             <p className="mt-1.5 text-xl font-semibold tabular-nums text-primary">
               {formatBrlFromCents(totalRemaining)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">parcelas com juros</p>
+          </div>
+          <div className="rounded-xl border bg-card px-4 py-3.5 shadow-sm">
+            <p className="text-xs text-muted-foreground">Se amortizar</p>
+            <p className="mt-1.5 text-xl font-semibold tabular-nums">
+              {formatBrlFromCents(totalAmortizeCents)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              só principal
+              {totalRemaining > totalAmortizeCents
+                ? ` · evita ${formatBrlFromCents(totalRemaining - totalAmortizeCents)}`
+                : null}
             </p>
           </div>
           <div className="rounded-xl border bg-card px-4 py-3.5 shadow-sm">
@@ -161,6 +182,7 @@ export default async function FinancingsPage({
               pending,
               paidCents,
               remainingCents,
+              amortizeCents,
               progress,
               system,
               rateLabel,
@@ -180,6 +202,7 @@ export default async function FinancingsPage({
                 firstDueOn={financing.firstDueOn}
                 pendingCount={pending.length}
                 remainingCents={remainingCents}
+                amortizeCents={amortizeCents}
                 paidCents={paidCents}
                 progress={progress}
                 nextPending={next}

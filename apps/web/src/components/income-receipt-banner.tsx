@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { formatBrlFromCents, formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { withActionToast } from '@/lib/action-toast';
@@ -27,7 +28,6 @@ export function IncomeReceiptBanner({
   incomeDay?: number | null;
   pendingIncomes?: PendingIncomeItem[];
 }): React.ReactElement {
-  const today = new Date().toISOString().slice(0, 10);
   const hasSeries = pendingIncomes.length > 0;
 
   return (
@@ -99,7 +99,12 @@ export function IncomeReceiptBanner({
                     className="flex items-center gap-2"
                   >
                     <input type="hidden" name="transactionId" value={item.id} />
-                    <input type="hidden" name="paidOn" value={today} />
+                    <DateInput
+                      name="paidOn"
+                      defaultValue={item.dueOn}
+                      className="h-8 w-[9.5rem] bg-background"
+                      required
+                    />
                     <MoneyInput
                       name="amount"
                       min="0.01"
