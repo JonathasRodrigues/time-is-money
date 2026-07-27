@@ -17,11 +17,14 @@ const KIND_OPTIONS = [
   { value: 'installment', label: 'Parcelas' },
 ] as const;
 
-function buildPaymentsHref(query: ScopeQuery & { kind?: string | null; payday?: boolean }): string {
+function buildPaymentsHref(
+  query: ScopeQuery & { kind?: string | null; payday?: boolean; flow?: 'pay' | 'receive' },
+): string {
   const href = buildScopeHref('/payments', query);
   const params = new URLSearchParams(href.includes('?') ? href.split('?')[1] : '');
   if (query.kind) params.set('kind', query.kind);
   if (query.payday) params.set('payday', '1');
+  if (query.flow === 'receive') params.set('flow', 'receive');
   const qs = params.toString();
   return qs ? `/payments?${qs}` : '/payments';
 }
@@ -34,6 +37,7 @@ export function PaymentFilters({
   customFrom,
   customTo,
   payday = false,
+  flow = 'pay',
 }: {
   centers: Array<{ id: string; name: string }>;
   range: DateRange;
@@ -42,16 +46,18 @@ export function PaymentFilters({
   customFrom?: string;
   customTo?: string;
   payday?: boolean;
+  flow?: 'pay' | 'receive';
 }): React.ReactElement {
   const router = useRouter();
 
-  const base: ScopeQuery & { kind: string | null; payday: boolean } = {
+  const base: ScopeQuery & { kind: string | null; payday: boolean; flow: 'pay' | 'receive' } = {
     center: activeCenterId,
     period: range.period,
     from: customFrom ?? range.start,
     to: customTo ?? range.end,
     kind: activeKind,
     payday,
+    flow,
   };
 
   function navigate(patch: Partial<typeof base>) {

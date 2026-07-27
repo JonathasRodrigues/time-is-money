@@ -78,7 +78,7 @@ export default async function PreferencesPage(): Promise<React.ReactElement> {
             <div className="space-y-3">
               <p className="text-sm font-medium">Recebimento</p>
               <p className="text-xs text-muted-foreground">
-                Fallback se você ainda não cadastrou receitas mensais em Contas a pagar. Com
+                Fallback se você ainda não cadastrou receitas mensais em Contas → A receber. Com
                 salário/VR cadastrados, o aviso lista cada um para confirmar o valor assim que o mês
                 começa.
               </p>

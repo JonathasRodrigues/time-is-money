@@ -52,7 +52,6 @@ export default async function FinancingsPage({
     .where(eq(installments.householdId, session.householdId))
     .orderBy(asc(installments.number));
 
-  const todayIso = new Date().toISOString().slice(0, 10);
   const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name }));
 
   let totalRemaining = 0;
@@ -185,7 +184,6 @@ export default async function FinancingsPage({
                 progress={progress}
                 nextPending={next}
                 categories={categoryOptions}
-                todayIso={todayIso}
                 installments={parcel.map((item) => ({
                   id: item.id,
                   number: item.number,

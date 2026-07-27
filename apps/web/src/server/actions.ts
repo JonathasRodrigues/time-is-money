@@ -359,14 +359,15 @@ export async function payInstallmentsBulkAction(formData: FormData) {
   const session = requireSession(ctx.session);
   const ids = formData.getAll('installmentId').map(String);
   const amounts = formData.getAll('amount').map(String);
+  const paidOns = formData.getAll('paidOn').map(String);
   if (ids.length === 0) throw new Error('Selecione ao menos uma parcela');
   const items = ids.map((installmentId, index) => ({
     installmentId,
     amountCents: Math.round(Number((amounts[index] ?? '0').replace(',', '.')) * 100),
+    paidOn: paidOns[index] ?? '',
   }));
   await payInstallmentsBulk(ctx, {
     householdId: session.householdId,
-    paidOn: String(formData.get('paidOn')),
     categoryId: String(formData.get('categoryId') || '') || undefined,
     items,
   });
@@ -515,7 +516,7 @@ export async function confirmIncomeReceiptAction() {
       ),
     );
   revalidateApp();
-  redirect('/payments?payday=1');
+  redirect('/payments?flow=receive&payday=1');
 }
 
 export async function confirmIncomeItemAction(formData: FormData) {
@@ -568,7 +569,7 @@ export async function confirmIncomeItemAction(formData: FormData) {
         ),
       );
     revalidateApp();
-    redirect('/payments?payday=1');
+    redirect('/payments?flow=receive&payday=1');
   }
 
   revalidateApp();

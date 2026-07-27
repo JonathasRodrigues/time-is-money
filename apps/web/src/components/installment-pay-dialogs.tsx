@@ -61,30 +61,34 @@ function CategorySelect({
   );
 }
 
-/** Confirma pagamento de uma ou várias parcelas, com valor editável. */
+/** Confirma pagamento de uma ou várias parcelas, com valor e data editáveis. */
 export function PayInstallmentsDialog({
   open,
   onOpenChange,
   installments,
   categories,
-  todayIso,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   installments: FinancingInstallmentRow[];
   categories: Array<{ id: string; name: string }>;
-  todayIso: string;
 }): React.ReactElement {
   const [pending, startTransition] = useTransition();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [paidOns, setPaidOns] = useState<Record<string, string>>({});
+  const [applyAllDate, setApplyAllDate] = useState('');
 
   useEffect(() => {
     if (!open) return;
-    const next: Record<string, string> = {};
+    const nextAmounts: Record<string, string> = {};
+    const nextPaidOns: Record<string, string> = {};
     for (const item of installments) {
-      next[item.id] = (item.amountCents / 100).toFixed(2);
+      nextAmounts[item.id] = (item.amountCents / 100).toFixed(2);
+      nextPaidOns[item.id] = item.dueOn;
     }
-    setAmounts(next);
+    setAmounts(nextAmounts);
+    setPaidOns(nextPaidOns);
+    setApplyAllDate(installments[0]?.dueOn ?? '');
   }, [open, installments]);
 
   const totalCents = useMemo(() => {
@@ -98,6 +102,18 @@ export function PayInstallmentsDialog({
   }, [amounts, installments]);
 
   const single = installments.length === 1 ? installments[0] : null;
+  const showApplyAll = installments.length > 1;
+
+  function applyDateToAll() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(applyAllDate)) return;
+    setPaidOns((prev) => {
+      const next = { ...prev };
+      for (const item of installments) {
+        next[item.id] = applyAllDate;
+      }
+      return next;
+    });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,8 +123,7 @@ export function PayInstallmentsDialog({
             {single ? `Pagar parcela #${single.number}` : `Pagar ${installments.length} parcelas`}
           </DialogTitle>
           <DialogDescription>
-            Ajuste o valor pago se for diferente do cronograma. O pagamento registra a despesa no
-            extrato.
+            A data padrão de cada parcela é o vencimento. Ajuste valor ou data se precisar.
           </DialogDescription>
         </DialogHeader>
 
@@ -134,33 +149,69 @@ export function PayInstallmentsDialog({
           }}
           className="grid gap-4"
         >
+          {showApplyAll ? (
+            <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+              <Label htmlFor="pay-apply-all" className="text-xs text-muted-foreground">
+                Aplicar uma data em todas
+              </Label>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <Input
+                  id="pay-apply-all"
+                  type="date"
+                  value={applyAllDate}
+                  onChange={(event) => setApplyAllDate(event.target.value)}
+                  className="h-9 flex-1 min-w-[10rem]"
+                />
+                <Button type="button" size="sm" variant="outline" onClick={applyDateToAll}>
+                  Aplicar
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-3">
             {installments.map((item) => (
               <div key={item.id} className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
                 <input type="hidden" name="installmentId" value={item.id} />
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="font-medium">
-                    #{item.number} · {formatIsoDateBr(item.dueOn)}
+                    #{item.number} · vence {formatIsoDateBr(item.dueOn)}
                   </p>
                   <p className="text-xs text-muted-foreground tabular-nums">
                     cronograma {formatBrlFromCents(item.amountCents)}
                   </p>
                 </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor={`pay-amount-${item.id}`}>Valor pago (R$)</Label>
-                  <Input
-                    id={`pay-amount-${item.id}`}
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={amounts[item.id] ?? ''}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setAmounts((prev) => ({ ...prev, [item.id]: value }));
-                    }}
-                  />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={`pay-amount-${item.id}`}>Valor pago (R$)</Label>
+                    <Input
+                      id={`pay-amount-${item.id}`}
+                      name="amount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={amounts[item.id] ?? ''}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setAmounts((prev) => ({ ...prev, [item.id]: value }));
+                      }}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={`pay-on-${item.id}`}>Pago em</Label>
+                    <Input
+                      id={`pay-on-${item.id}`}
+                      name="paidOn"
+                      type="date"
+                      required
+                      value={paidOns[item.id] ?? item.dueOn}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setPaidOns((prev) => ({ ...prev, [item.id]: value }));
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
@@ -173,10 +224,6 @@ export function PayInstallmentsDialog({
             </span>
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="pay-on-bulk">Pagar em</Label>
-            <Input id="pay-on-bulk" name="paidOn" type="date" required defaultValue={todayIso} />
-          </div>
           <CategorySelect id="pay-cat-bulk" categories={categories} />
 
           <DialogFooter>
@@ -209,14 +256,12 @@ export function AmortizeSelectedDialog({
   currentMonth,
   futures,
   categories,
-  todayIso,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentMonth: FinancingInstallmentRow;
   futures: FinancingInstallmentRow[];
   categories: Array<{ id: string; name: string }>;
-  todayIso: string;
 }): React.ReactElement {
   const suggestedPrincipalCents = futures.reduce((acc, future) => {
     const principal =
@@ -341,7 +386,7 @@ export function AmortizeSelectedDialog({
               name="paidOn"
               type="date"
               required
-              defaultValue={todayIso}
+              defaultValue={currentMonth.dueOn}
             />
           </div>
 

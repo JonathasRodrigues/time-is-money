@@ -45,7 +45,7 @@ import {
 
 const primaryNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/payments', label: 'Contas a pagar', icon: Wallet },
+  { href: '/payments', label: 'Contas', icon: Wallet },
   { href: '/wealth', label: 'Patrimônio', icon: Landmark },
   { href: '/transactions', label: 'Extrato', icon: ArrowLeftRight },
   { href: '/financings', label: 'Financiamentos', icon: PiggyBank },
@@ -75,7 +75,7 @@ function buildSystemNav(canManageMembers: boolean): SystemNavItem[] {
 }
 
 function titleFromPath(pathname: string): string {
-  if (pathname.startsWith('/payments')) return 'Contas a pagar';
+  if (pathname.startsWith('/payments')) return 'Contas';
   if (pathname.startsWith('/wealth')) return 'Patrimônio';
   if (pathname.startsWith('/transactions')) return 'Extrato';
   if (pathname.startsWith('/financings')) return 'Financiamentos';

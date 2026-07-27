@@ -220,13 +220,14 @@ export const payInstallmentSchema = z.object({
 
 export const payInstallmentsBulkSchema = z.object({
   householdId: z.string().uuid(),
-  paidOn: isoDateSchema,
   categoryId: z.string().uuid().optional(),
   items: z
     .array(
       z.object({
         installmentId: z.string().uuid(),
         amountCents: moneyCentsSchema,
+        /** Data de pagamento desta parcela (padrão: vencimento). */
+        paidOn: isoDateSchema,
       }),
     )
     .min(1)

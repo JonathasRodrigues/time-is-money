@@ -46,7 +46,6 @@ export function FinancingContractCard({
   progress,
   nextPending,
   categories,
-  todayIso,
   installments,
 }: {
   financingId: string;
@@ -65,7 +64,6 @@ export function FinancingContractCard({
   progress: number;
   nextPending: FinancingInstallmentRow | null;
   categories: Array<{ id: string; name: string }>;
-  todayIso: string;
   installments: FinancingInstallmentRow[];
 }): React.ReactElement {
   const [showSchedule, setShowSchedule] = useState(true);
@@ -301,7 +299,6 @@ export function FinancingContractCard({
           }}
           installments={selectedPending}
           categories={categories}
-          todayIso={todayIso}
         />
       ) : null}
 
@@ -315,7 +312,6 @@ export function FinancingContractCard({
           currentMonth={nextPending}
           futures={selectedFutures}
           categories={categories}
-          todayIso={todayIso}
         />
       ) : null}
     </article>

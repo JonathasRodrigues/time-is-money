@@ -1040,7 +1040,7 @@ export async function payInstallmentsBulk(
     const paid = await payInstallmentWithCategory(ctx, {
       householdId: session.householdId,
       installmentId: item.installmentId,
-      paidOn: input.paidOn,
+      paidOn: item.paidOn,
       amountCents: item.amountCents,
       categoryId: raw.categoryId ?? input.categoryId,
     });

@@ -19,7 +19,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { withActionToast } from '@/lib/action-toast';
 import { createMonthlySeriesAction, createPendingTransactionAction } from '@/server/actions';
 
-type PayableFormKind = 'variable' | 'fixed' | 'income';
+type PayableFormKind = 'variable' | 'fixed';
 
 function parseAmountToCents(raw: string): number | null {
   const normalized = raw.trim().replace(',', '.');
@@ -51,24 +51,17 @@ const KIND_META: Record<PayableFormKind, { title: string; description: string; s
     description: 'Água, luz, imposto… Repete todo mês. Valor padrão opcional.',
     submit: 'Criar conta fixa',
   },
-  income: {
-    title: 'Receita mensal',
-    description: 'Salário, VR… Todo mês o app avisa e você confirma o valor.',
-    submit: 'Criar receita fixa',
-  },
 };
 
 export function NewPayableSheet({
   centers,
   expenseCategories,
-  incomeCategories,
   accounts,
   defaultCostCenterId,
   defaultDueOn,
 }: {
   centers: Array<{ id: string; name: string }>;
   expenseCategories: Array<{ id: string; name: string }>;
-  incomeCategories: Array<{ id: string; name: string }>;
   accounts: Array<{ id: string; name: string }>;
   defaultCostCenterId?: string;
   defaultDueOn: string;
@@ -80,8 +73,7 @@ export function NewPayableSheet({
   const [totalAmount, setTotalAmount] = useState('');
   const [amountSource, setAmountSource] = useState<'parcel' | 'total'>('parcel');
   const meta = KIND_META[kind];
-  const categories = kind === 'income' ? incomeCategories : expenseCategories;
-  const sheetTitle = kind === 'income' ? 'Adicionar receita' : 'Adicionar despesa';
+  const categories = expenseCategories;
   const isParcelado = parcelar && installmentCount > 1;
   const effectiveInstallmentCount = isParcelado ? installmentCount : 1;
 
@@ -145,12 +137,8 @@ export function NewPayableSheet({
       </SheetTrigger>
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>{sheetTitle}</SheetTitle>
-          <SheetDescription>
-            {kind === 'income'
-              ? 'Receita que se repete todo mês.'
-              : 'Conta pontual, parcelada ou fixa mensal.'}
-          </SheetDescription>
+          <SheetTitle>Adicionar despesa</SheetTitle>
+          <SheetDescription>Conta pontual, parcelada ou fixa mensal.</SheetDescription>
         </SheetHeader>
 
         <div className="mt-4 grid gap-4 px-4 pb-6">
@@ -161,7 +149,7 @@ export function NewPayableSheet({
             spacing={0}
             value={kind}
             onValueChange={(value) => {
-              if (value === 'variable' || value === 'fixed' || value === 'income') {
+              if (value === 'variable' || value === 'fixed') {
                 setKind(value);
               }
             }}
@@ -173,9 +161,6 @@ export function NewPayableSheet({
             </ToggleGroupItem>
             <ToggleGroupItem value="fixed" className="flex-1 px-2 text-xs sm:text-sm">
               Fixa
-            </ToggleGroupItem>
-            <ToggleGroupItem value="income" className="flex-1 px-2 text-xs sm:text-sm">
-              Receita
             </ToggleGroupItem>
           </ToggleGroup>
 
@@ -340,60 +325,6 @@ export function NewPayableSheet({
               </div>
               <CenterCategoryAccountFields
                 prefix="fix"
-                centers={centers}
-                categories={categories}
-                accounts={accounts}
-                defaultCostCenterId={defaultCostCenterId}
-              />
-              <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
-            </form>
-          ) : null}
-
-          {kind === 'income' ? (
-            <form
-              action={withActionToast(createMonthlySeriesAction, {
-                loading: 'Criando receita…',
-                success: 'Receita fixa criada',
-              })}
-              className="grid gap-3"
-            >
-              <input type="hidden" name="type" value="income" />
-              <div className="grid gap-1.5">
-                <Label htmlFor="inc-desc">Descrição</Label>
-                <Input
-                  id="inc-desc"
-                  name="description"
-                  required
-                  placeholder="Salário · Empresa Tal"
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="inc-day">Dia previsto</Label>
-                  <Input
-                    id="inc-day"
-                    name="dueDay"
-                    type="number"
-                    min={1}
-                    max={28}
-                    required
-                    defaultValue={5}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="inc-amount">Valor padrão (R$) — opcional</Label>
-                  <Input
-                    id="inc-amount"
-                    name="defaultAmount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Vazio = média"
-                  />
-                </div>
-              </div>
-              <CenterCategoryAccountFields
-                prefix="inc"
                 centers={centers}
                 categories={categories}
                 accounts={accounts}

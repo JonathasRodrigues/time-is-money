@@ -68,7 +68,7 @@ export function IncomeReceiptBanner({
               </SubmitButton>
             </form>
             <Button asChild size="sm" variant="ghost">
-              <Link href="/payments">Contas a pagar</Link>
+              <Link href="/payments?flow=receive">Contas a receber</Link>
             </Button>
           </div>
         </div>

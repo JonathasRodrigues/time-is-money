@@ -55,8 +55,8 @@ export function NewTransactionSheet({
       ? 'Quando o dinheiro saiu da conta.'
       : 'Quando o dinheiro entrou na conta.'
     : isExpense
-      ? 'Quando a conta vence — entra em Contas a pagar.'
-      : 'Quando você espera receber — fica a receber.';
+      ? 'Quando a conta vence — entra em Contas → A pagar.'
+      : 'Quando você espera receber — entra em Contas → A receber.';
 
   const statusPaidLabel = isExpense ? 'Já paguei' : 'Já recebi';
   const statusPendingLabel = isExpense ? 'Ainda não paguei' : 'Ainda não recebi';
@@ -73,7 +73,7 @@ export function NewTransactionSheet({
         <SheetHeader>
           <SheetTitle>Registrar movimento</SheetTitle>
           <SheetDescription>
-            Avulso no extrato. Contas fixas mensais ficam em Contas a pagar.
+            Avulso no extrato. Contas fixas e a receber ficam em Contas.
           </SheetDescription>
         </SheetHeader>
         <form

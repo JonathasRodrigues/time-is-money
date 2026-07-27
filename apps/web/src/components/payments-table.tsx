@@ -48,12 +48,21 @@ function amountInputDefault(row: PayableRow): string {
 export function PaymentsTable({
   rows,
   today,
+  mode = 'pay',
 }: {
   rows: PayableRow[];
   today: string;
+  mode?: 'pay' | 'receive';
 }): React.ReactElement {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pending, startTransition] = useTransition();
+  const isReceive = mode === 'receive';
+  const actionVerb = isReceive ? 'Receber' : 'Pagar';
+  const actionGerund = isReceive ? 'Recebendo' : 'Pagando';
+  const actionPast = isReceive ? 'Recebido' : 'Pago';
+  const bulkSuccess = isReceive
+    ? (count: number) => (count === 1 ? 'Recebimento registrado' : 'Recebimentos registrados')
+    : (count: number) => (count === 1 ? 'Pagamento registrado' : 'Pagamentos registrados');
 
   const selectableIds = useMemo(
     () => rows.filter((row) => payAmountCents(row) != null).map((row) => row.id),
@@ -97,8 +106,8 @@ export function PaymentsTable({
     startTransition(async () => {
       try {
         await runWithToast(() => payTransactionsBulkAction({ paidOn: today, items }), {
-          loading: `Pagando ${items.length}…`,
-          success: items.length === 1 ? 'Pagamento registrado' : 'Pagamentos registrados',
+          loading: `${actionGerund} ${items.length}…`,
+          success: bulkSuccess(items.length),
         });
         setSelected(new Set());
       } catch {
@@ -133,7 +142,7 @@ export function PaymentsTable({
               Limpar
             </Button>
             <Button type="button" size="sm" disabled={pending} onClick={paySelected}>
-              {pending ? 'Pagando…' : `Pagar ${selected.size}`}
+              {pending ? `${actionGerund}…` : `${actionVerb} ${selected.size}`}
             </Button>
           </div>
         </div>
@@ -242,11 +251,13 @@ export function PaymentsTable({
                         size="sm"
                         pendingLabel="…"
                         formAction={withActionToast(payTransactionAction, {
-                          loading: 'Registrando pagamento…',
-                          success: 'Pago',
+                          loading: isReceive
+                            ? 'Registrando recebimento…'
+                            : 'Registrando pagamento…',
+                          success: actionPast,
                         })}
                       >
-                        Pagar
+                        {actionVerb}
                       </SubmitButton>
                     </form>
                   </TableCell>
