@@ -29,8 +29,11 @@ import type {
   CreateTransactionInput,
   CreateTransferInput,
   PayInstallmentInput,
+  PayInstallmentsBulkInput,
   PayTransactionInput,
   PayTransactionsBulkInput,
+  RebuildFinancingInput,
+  SoftDeleteFinancingInput,
   UpdatePendingAmountInput,
 } from '@tim/validators';
 import {
@@ -40,11 +43,14 @@ import {
   createTransactionSchema,
   createTransferSchema,
   payInstallmentSchema,
+  payInstallmentsBulkSchema,
   payTransactionSchema,
   payTransactionsBulkSchema,
+  rebuildFinancingSchema,
+  softDeleteFinancingSchema,
   updatePendingAmountSchema,
 } from '@tim/validators';
-import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 
 export interface AppContext {
@@ -581,7 +587,7 @@ export async function createFinancing(ctx: AppContext, raw: CreateFinancingInput
       principalCents: input.principalCents,
       installmentCount: input.installmentCount,
       installmentAmountCents: amortization.firstInstallmentCents,
-      annualRateBps: input.annualRateBps,
+      annualRateBps: input.annualRateBps ?? amortization.annualRateBps,
       amortizationSystem: input.amortizationSystem,
       firstDueOn: input.firstDueOn,
     })
@@ -1005,6 +1011,299 @@ export async function createTransfer(ctx: AppContext, raw: CreateTransferInput) 
   });
 
   return transfer;
+}
+
+export async function payInstallmentsBulk(
+  ctx: AppContext,
+  raw: PayInstallmentsBulkInput & { categoryId?: string },
+) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'financings.write');
+  const input = payInstallmentsBulkSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const ids = input.items.map((item) => item.installmentId);
+  const rows = await ctx.db
+    .select({ id: installments.id, number: installments.number })
+    .from(installments)
+    .where(and(inArray(installments.id, ids), eq(installments.householdId, session.householdId)));
+
+  const numberById = new Map(rows.map((row) => [row.id, row.number]));
+  const sorted = [...input.items].sort(
+    (a, b) => (numberById.get(a.installmentId) ?? 0) - (numberById.get(b.installmentId) ?? 0),
+  );
+
+  const results = [];
+  for (const item of sorted) {
+    const paid = await payInstallmentWithCategory(ctx, {
+      householdId: session.householdId,
+      installmentId: item.installmentId,
+      paidOn: input.paidOn,
+      amountCents: item.amountCents,
+      categoryId: raw.categoryId ?? input.categoryId,
+    });
+    results.push(paid);
+  }
+  return results;
+}
+
+/**
+ * Recalcula o cronograma do financiamento.
+ * Mantém parcelas já pagas; apaga pendentes e regenera a partir do saldo remanescente
+ * (ou do zero, se ainda não houver pagamento).
+ */
+export async function rebuildFinancing(ctx: AppContext, raw: RebuildFinancingInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'financings.write');
+  const input = rebuildFinancingSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [financing] = await ctx.db
+    .select()
+    .from(financings)
+    .where(
+      and(
+        eq(financings.id, input.financingId),
+        eq(financings.householdId, session.householdId),
+        isNull(financings.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!financing) throw new Error('Financiamento não encontrado');
+
+  const existing = await ctx.db
+    .select()
+    .from(installments)
+    .where(
+      and(
+        eq(installments.financingId, financing.id),
+        eq(installments.householdId, session.householdId),
+      ),
+    )
+    .orderBy(asc(installments.number));
+
+  const paid = existing.filter((row) => row.status === 'paid');
+  const pending = existing.filter((row) => row.status !== 'paid');
+
+  for (const row of pending) {
+    if (row.transactionId) {
+      await ctx.db
+        .update(transactions)
+        .set({ deletedAt: new Date(), installmentId: null })
+        .where(
+          and(
+            eq(transactions.id, row.transactionId),
+            eq(transactions.householdId, session.householdId),
+          ),
+        );
+    }
+  }
+
+  if (pending.length > 0) {
+    await ctx.db
+      .delete(installments)
+      .where(
+        and(
+          eq(installments.financingId, financing.id),
+          eq(installments.householdId, session.householdId),
+          ne(installments.status, 'paid'),
+        ),
+      );
+  }
+
+  let schedule;
+  let startNumber = 1;
+
+  if (paid.length === 0) {
+    schedule = buildAmortizationSchedule({
+      system: input.amortizationSystem,
+      principalCents: input.principalCents,
+      installmentCount: input.installmentCount,
+      firstDueOn: input.firstDueOn,
+      annualRateBps: input.annualRateBps,
+      installmentAmountCents: input.installmentAmountCents,
+    });
+  } else {
+    const lastPaid = paid[paid.length - 1]!;
+    startNumber = lastPaid.number + 1;
+    const remainingSlots = Math.max(1, input.installmentCount - paid.length);
+    const rateBps = input.annualRateBps ?? financing.annualRateBps ?? undefined;
+    const pmt =
+      input.installmentAmountCents ?? financing.installmentAmountCents ?? lastPaid.amountCents;
+    schedule = rebuildRemainingSchedule({
+      system: input.amortizationSystem,
+      balanceCents: lastPaid.balanceAfterCents,
+      firstDueOn: addMonths(lastPaid.dueOn, 1),
+      annualRateBps: rateBps ?? undefined,
+      installmentAmountCents: pmt,
+      amortizationCents: lastPaid.principalCents,
+      maxInstallments: remainingSlots,
+    });
+  }
+
+  const annualRateBps = input.annualRateBps ?? schedule.annualRateBps ?? financing.annualRateBps;
+
+  await ctx.db
+    .update(financings)
+    .set({
+      name: input.name,
+      institution: input.institution,
+      principalCents: input.principalCents,
+      installmentCount: paid.length + schedule.installmentCount,
+      installmentAmountCents: schedule.firstInstallmentCents,
+      annualRateBps: annualRateBps ?? null,
+      amortizationSystem: input.amortizationSystem,
+      firstDueOn: input.firstDueOn,
+    })
+    .where(eq(financings.id, financing.id));
+
+  if (schedule.schedule.length === 0) {
+    await writeAudit(ctx, {
+      action: 'rebuild',
+      resourceType: 'financing',
+      resourceId: financing.id,
+      metadata: { paidKept: paid.length, pendingCreated: 0 },
+    });
+    return financing;
+  }
+
+  const cats = await ctx.db
+    .select()
+    .from(categories)
+    .where(and(eq(categories.householdId, session.householdId), eq(categories.type, 'expense')));
+  const categoryId = cats.find((c) => c.name.toLowerCase().includes('financ'))?.id ?? cats[0]?.id;
+
+  const createdInstallments = await ctx.db
+    .insert(installments)
+    .values(
+      schedule.schedule.map((item, index) => ({
+        householdId: session.householdId,
+        financingId: financing.id,
+        number: startNumber + index,
+        dueOn: item.dueOn,
+        amountCents: item.amountCents,
+        interestCents: item.interestCents,
+        principalCents: item.principalCents,
+        balanceAfterCents: item.balanceAfterCents,
+        status: 'pending' as const,
+      })),
+    )
+    .returning();
+
+  if (categoryId) {
+    for (const installment of createdInstallments) {
+      const [tx] = await ctx.db
+        .insert(transactions)
+        .values({
+          householdId: session.householdId,
+          costCenterId: financing.costCenterId,
+          categoryId,
+          accountId: financing.accountId,
+          type: 'expense',
+          status: 'pending',
+          amountCents: installment.amountCents,
+          occurredOn: installment.dueOn,
+          dueOn: installment.dueOn,
+          paidOn: null,
+          description: `Parcela ${installment.number} — ${input.name}`,
+          tags: [],
+          source: 'financing',
+          installmentId: installment.id,
+          duplicateHash: duplicateHash({
+            occurredOn: installment.dueOn,
+            amountCents: installment.amountCents,
+            description: `Parcela ${installment.number} — ${input.name}`,
+            accountId: financing.accountId,
+          }),
+          createdBy: session.userId,
+        })
+        .returning();
+
+      if (tx) {
+        await ctx.db
+          .update(installments)
+          .set({ transactionId: tx.id })
+          .where(eq(installments.id, installment.id));
+      }
+    }
+  }
+
+  await writeAudit(ctx, {
+    action: 'rebuild',
+    resourceType: 'financing',
+    resourceId: financing.id,
+    metadata: {
+      paidKept: paid.length,
+      pendingCreated: createdInstallments.length,
+      system: input.amortizationSystem,
+    },
+  });
+
+  return financing;
+}
+
+export async function softDeleteFinancing(ctx: AppContext, raw: SoftDeleteFinancingInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'financings.write');
+  const input = softDeleteFinancingSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [financing] = await ctx.db
+    .select()
+    .from(financings)
+    .where(
+      and(
+        eq(financings.id, input.financingId),
+        eq(financings.householdId, session.householdId),
+        isNull(financings.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!financing) throw new Error('Financiamento não encontrado');
+
+  const pending = await ctx.db
+    .select()
+    .from(installments)
+    .where(
+      and(
+        eq(installments.financingId, financing.id),
+        eq(installments.householdId, session.householdId),
+        eq(installments.status, 'pending'),
+      ),
+    );
+
+  for (const row of pending) {
+    if (row.transactionId) {
+      await ctx.db
+        .update(transactions)
+        .set({ deletedAt: new Date(), installmentId: null })
+        .where(
+          and(
+            eq(transactions.id, row.transactionId),
+            eq(transactions.householdId, session.householdId),
+          ),
+        );
+    }
+  }
+
+  await ctx.db
+    .update(financings)
+    .set({ deletedAt: new Date() })
+    .where(eq(financings.id, financing.id));
+
+  await writeAudit(ctx, {
+    action: 'delete',
+    resourceType: 'financing',
+    resourceId: financing.id,
+  });
 }
 
 export { yearMonthFromIso };

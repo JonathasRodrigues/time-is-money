@@ -7,7 +7,7 @@ import {
   type AmortizationSummary,
   type AmortizationSystem,
 } from '@tim/domain';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { CheckCircle2, Calculator } from 'lucide-react';
 import { createFinancingAction } from '@/server/actions';
 import { nativeSelectClassName } from '@/components/page-header';
@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { runWithToast } from '@/lib/action-toast';
 import {
   Table,
   TableBody,
@@ -47,7 +47,8 @@ function parseMoneyToCents(raw: string): number | null {
 const SYSTEM_HELP: Record<AmortizationSystem, string> = {
   price: 'Parcelas iguais — padrão de veículos e crédito pessoal.',
   sac: 'Parcelas decrescentes — padrão típico de imóvel.',
-  fixed: 'Usa o valor de parcela que você informar no contrato.',
+  fixed:
+    'Usa o valor da parcela do contrato (com juros). O cronograma estima juros e amortização a partir do principal e do prazo.',
 };
 
 function ScheduleTable({
@@ -96,6 +97,7 @@ export function FinancingForm({
   accounts,
   defaultCostCenterId,
 }: FinancingFormProps): React.ReactElement {
+  const [pending, startTransition] = useTransition();
   const [system, setSystem] = useState<AmortizationSystem>('price');
   const [principal, setPrincipal] = useState('80000');
   const [count, setCount] = useState('48');
@@ -179,15 +181,21 @@ export function FinancingForm({
         </div>
         <form
           id="financing-create-form"
-          action={withActionToast(createFinancingAction, {
-            loading: 'Gravando financiamento…',
-            success: 'Financiamento gravado',
-          })}
           className="grid gap-4"
           onSubmit={(event) => {
-            if (!simulation || !confirmed) {
-              event.preventDefault();
-            }
+            event.preventDefault();
+            if (!simulation || !confirmed || pending) return;
+            const formData = new FormData(event.currentTarget);
+            startTransition(async () => {
+              try {
+                await runWithToast(() => createFinancingAction(formData), {
+                  loading: 'Gravando financiamento…',
+                  success: 'Financiamento gravado',
+                });
+              } catch {
+                // toast já exibido
+              }
+            });
           }}
         >
           <div className="flex flex-col gap-1.5">
@@ -349,7 +357,11 @@ export function FinancingForm({
             </span>
           </label>
 
-          <SubmitButton disabled={!simulation || !confirmed} pendingLabel="Gravando…">
+          <SubmitButton
+            disabled={!simulation || !confirmed || pending}
+            isPending={pending}
+            pendingLabel="Gravando…"
+          >
             Gravar financiamento
           </SubmitButton>
         </form>

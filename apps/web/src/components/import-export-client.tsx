@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, Loader2, Upload } from 'lucide-react';
 import {
   commitImportAction,
   downloadTemplateAction,
@@ -25,7 +25,25 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { runWithToast } from '@/lib/action-toast';
 
+function BusyButtonLabel({
+  active,
+  idle,
+  busy,
+}: {
+  active: boolean;
+  idle: string;
+  busy: string;
+}): React.ReactElement {
+  if (!active) return <>{idle}</>;
+  return (
+    <>
+      <Loader2 className="size-4 animate-spin" aria-hidden />
+      {busy}
+    </>
+  );
+}
 const PAGE_SIZE = 50;
 
 function formatCentsInput(cents: number | undefined): string {
@@ -77,6 +95,9 @@ function shiftYearOnRows(rows: ImportPreviewRowDto[], year: number): ImportPrevi
 
 export function ImportExportClient(): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState<'export' | 'template' | 'preview' | 'save' | 'commit' | null>(
+    null,
+  );
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
   const [rows, setRows] = useState<ImportPreviewRowDto[]>([]);
   /** method (bruto) → nome da conta do household */
@@ -187,27 +208,39 @@ export function ImportExportClient(): React.ReactElement {
               onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
+                setBusy('export');
                 startTransition(async () => {
-                  const result = await exportTransactionsAction({
-                    format: String(fd.get('format') || 'csv') as 'csv' | 'xlsx',
-                    from: String(fd.get('from') || ''),
-                    to: String(fd.get('to') || ''),
-                  });
-                  const blob = new Blob(
-                    [Uint8Array.from(atob(result.base64), (c) => c.charCodeAt(0))],
-                    {
-                      type:
-                        result.format === 'csv'
-                          ? 'text/csv;charset=utf-8'
-                          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    },
-                  );
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = result.filename;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  try {
+                    await runWithToast(
+                      async () => {
+                        const result = await exportTransactionsAction({
+                          format: String(fd.get('format') || 'csv') as 'csv' | 'xlsx',
+                          from: String(fd.get('from') || ''),
+                          to: String(fd.get('to') || ''),
+                        });
+                        const blob = new Blob(
+                          [Uint8Array.from(atob(result.base64), (c) => c.charCodeAt(0))],
+                          {
+                            type:
+                              result.format === 'csv'
+                                ? 'text/csv;charset=utf-8'
+                                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                          },
+                        );
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = result.filename;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      },
+                      { loading: 'Gerando export…', success: 'Download iniciado' },
+                    );
+                  } catch {
+                    // toast já exibido
+                  } finally {
+                    setBusy(null);
+                  }
                 });
               }}
             >
@@ -234,7 +267,7 @@ export function ImportExportClient(): React.ReactElement {
                 </select>
               </div>
               <Button type="submit" disabled={pending}>
-                Baixar export
+                <BusyButtonLabel active={busy === 'export'} idle="Baixar export" busy="Gerando…" />
               </Button>
             </form>
             <Button
@@ -242,19 +275,37 @@ export function ImportExportClient(): React.ReactElement {
               variant="outline"
               disabled={pending}
               onClick={() => {
+                setBusy('template');
                 startTransition(async () => {
-                  const result = await downloadTemplateAction();
-                  const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'template-time-is-money.csv';
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  try {
+                    await runWithToast(
+                      async () => {
+                        const result = await downloadTemplateAction();
+                        const blob = new Blob([result.csv], {
+                          type: 'text/csv;charset=utf-8',
+                        });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'template-time-is-money.csv';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      },
+                      { loading: 'Baixando template…', success: 'Template baixado' },
+                    );
+                  } catch {
+                    // toast já exibido
+                  } finally {
+                    setBusy(null);
+                  }
                 });
               }}
             >
-              Baixar template oficial
+              <BusyButtonLabel
+                active={busy === 'template'}
+                idle="Baixar template oficial"
+                busy="Baixando…"
+              />
             </Button>
           </CardContent>
         </Card>
@@ -275,12 +326,20 @@ export function ImportExportClient(): React.ReactElement {
               onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
+                setBusy('preview');
                 startTransition(async () => {
                   try {
-                    const result = await previewImportAction(fd);
-                    initPreview(result);
+                    await runWithToast(
+                      async () => {
+                        const result = await previewImportAction(fd);
+                        initPreview(result);
+                      },
+                      { loading: 'Lendo planilha…', success: 'Preview pronto' },
+                    );
                   } catch (error) {
                     setMessage(error instanceof Error ? error.message : 'Falha no preview');
+                  } finally {
+                    setBusy(null);
                   }
                 });
               }}
@@ -298,7 +357,7 @@ export function ImportExportClient(): React.ReactElement {
                 />
               </div>
               <Button type="submit" disabled={pending}>
-                Pré-visualizar
+                <BusyButtonLabel active={busy === 'preview'} idle="Pré-visualizar" busy="Lendo…" />
               </Button>
             </form>
             {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
@@ -580,17 +639,32 @@ export function ImportExportClient(): React.ReactElement {
                   disabled={pending || !dirty}
                   onClick={() => {
                     if (!preview) return;
+                    setBusy('save');
                     startTransition(async () => {
-                      await updateImportPreviewAction({
-                        jobId: preview.jobId,
-                        rows: rowsToUpdatePayload(),
-                      });
-                      setDirty(false);
-                      setMessage('Ajustes salvos no preview');
+                      try {
+                        await runWithToast(
+                          () =>
+                            updateImportPreviewAction({
+                              jobId: preview.jobId,
+                              rows: rowsToUpdatePayload(),
+                            }),
+                          { loading: 'Salvando ajustes…', success: 'Ajustes salvos' },
+                        );
+                        setDirty(false);
+                        setMessage('Ajustes salvos no preview');
+                      } catch {
+                        // toast já exibido
+                      } finally {
+                        setBusy(null);
+                      }
                     });
                   }}
                 >
-                  Salvar ajustes
+                  <BusyButtonLabel
+                    active={busy === 'save'}
+                    idle="Salvar ajustes"
+                    busy="Salvando…"
+                  />
                 </Button>
                 <Button
                   type="button"
@@ -605,25 +679,44 @@ export function ImportExportClient(): React.ReactElement {
                       );
                       return;
                     }
+                    setBusy('commit');
                     startTransition(async () => {
-                      if (dirty) {
-                        await updateImportPreviewAction({
-                          jobId: preview.jobId,
-                          rows: rowsToUpdatePayload(),
-                        });
-                        setDirty(false);
+                      try {
+                        await runWithToast(
+                          async () => {
+                            if (dirty) {
+                              await updateImportPreviewAction({
+                                jobId: preview.jobId,
+                                rows: rowsToUpdatePayload(),
+                              });
+                              setDirty(false);
+                            }
+                            const result = await commitImportAction(preview.jobId);
+                            setMessage(
+                              `Importação concluída: ${result.created} criados, ${result.skipped} skip, ${result.errors} erros`,
+                            );
+                            setPreview(null);
+                            setRows([]);
+                            setMethodMap({});
+                          },
+                          {
+                            loading: 'Confirmando importação…',
+                            success: 'Importação concluída',
+                          },
+                        );
+                      } catch {
+                        // toast já exibido
+                      } finally {
+                        setBusy(null);
                       }
-                      const result = await commitImportAction(preview.jobId);
-                      setMessage(
-                        `Importação concluída: ${result.created} criados, ${result.skipped} skip, ${result.errors} erros`,
-                      );
-                      setPreview(null);
-                      setRows([]);
-                      setMethodMap({});
                     });
                   }}
                 >
-                  Confirmar importação
+                  <BusyButtonLabel
+                    active={busy === 'commit'}
+                    idle="Confirmar importação"
+                    busy="Importando…"
+                  />
                 </Button>
               </div>
             </div>

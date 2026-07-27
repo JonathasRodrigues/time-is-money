@@ -128,10 +128,29 @@ export const createInstitutionSchema = z.object({
   name: z.string().min(1).max(120),
 });
 
+export const updateInstitutionSchema = z.object({
+  householdId: z.string().uuid(),
+  institutionId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+});
+
 export const updateAccountBalanceSchema = z.object({
   householdId: z.string().uuid(),
   accountId: z.string().uuid(),
   balanceCents: z.number().int().min(0),
+});
+
+export const updateAccountSchema = z.object({
+  householdId: z.string().uuid(),
+  accountId: z.string().uuid(),
+  costCenterId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  institutionId: z.string().uuid().nullable().optional(),
+  parentAccountId: z.string().uuid().nullable().optional(),
+  kind: z.enum(['cash', 'checking', 'investment_pot']),
+  balanceCents: z.number().int().min(0),
+  yieldType: z.enum(['none', 'cdi', 'fixed_annual']),
+  yieldBps: z.number().int().min(0).max(100_000).nullable().optional(),
 });
 
 export const createTransferSchema = z
@@ -197,6 +216,59 @@ export const payInstallmentSchema = z.object({
   categoryId: z.string().uuid().optional(),
   /** Amortização extraordinária (100% principal) no mesmo pagamento. */
   extraAmortizationCents: moneyCentsSchema.optional(),
+});
+
+export const payInstallmentsBulkSchema = z.object({
+  householdId: z.string().uuid(),
+  paidOn: isoDateSchema,
+  categoryId: z.string().uuid().optional(),
+  items: z
+    .array(
+      z.object({
+        installmentId: z.string().uuid(),
+        amountCents: moneyCentsSchema,
+      }),
+    )
+    .min(1)
+    .max(60),
+});
+
+export const rebuildFinancingSchema = z
+  .object({
+    householdId: z.string().uuid(),
+    financingId: z.string().uuid(),
+    name: z.string().min(1).max(160),
+    institution: z.string().max(160).optional(),
+    principalCents: moneyCentsSchema,
+    installmentCount: z.number().int().positive().max(600),
+    installmentAmountCents: moneyCentsSchema.optional(),
+    firstDueOn: isoDateSchema,
+    annualRateBps: z.number().int().min(0).max(100_000).optional(),
+    amortizationSystem: amortizationSystemSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.amortizationSystem === 'fixed') {
+      if (data.installmentAmountCents === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Valor da parcela é obrigatório no modo fixo',
+          path: ['installmentAmountCents'],
+        });
+      }
+      return;
+    }
+    if (data.annualRateBps === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Taxa anual é obrigatória para Price/SAC',
+        path: ['annualRateBps'],
+      });
+    }
+  });
+
+export const softDeleteFinancingSchema = z.object({
+  householdId: z.string().uuid(),
+  financingId: z.string().uuid(),
 });
 
 export const notificationPrefsSchema = z.object({
@@ -273,10 +345,15 @@ export type CreateCostCenterInput = z.infer<typeof createCostCenterSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
 export type CreateInstitutionInput = z.infer<typeof createInstitutionSchema>;
+export type UpdateInstitutionInput = z.infer<typeof updateInstitutionSchema>;
 export type UpdateAccountBalanceInput = z.infer<typeof updateAccountBalanceSchema>;
+export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 export type CreateFinancingInput = z.infer<typeof createFinancingSchema>;
 export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>;
+export type PayInstallmentsBulkInput = z.infer<typeof payInstallmentsBulkSchema>;
+export type RebuildFinancingInput = z.infer<typeof rebuildFinancingSchema>;
+export type SoftDeleteFinancingInput = z.infer<typeof softDeleteFinancingSchema>;
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
 export type ImportPreviewRowUpdate = z.infer<typeof importPreviewRowUpdateSchema>;

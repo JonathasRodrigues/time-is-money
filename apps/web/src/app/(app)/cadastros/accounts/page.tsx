@@ -11,6 +11,8 @@ import {
 import { accounts, costCenters, institutions } from '@tim/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
+import { EditAccountDialog } from '@/components/edit-account-dialog';
+import { EditInstitutionRow } from '@/components/edit-institution-row';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
 import { ActionForm } from '@/components/action-form';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +47,9 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
   const centerMap = new Map(centers.map((c) => [c.id, c.name]));
   const bankMap = new Map(banks.map((b) => [b.id, b.name]));
   const parents = rows.filter((r) => r.kind !== 'investment_pot');
+  const centerOptions = centers.map((c) => ({ id: c.id, name: c.name }));
+  const bankOptions = banks.map((b) => ({ id: b.id, name: b.name }));
+  const parentOptions = parents.map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,9 +77,11 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
               <SubmitButton pendingLabel="Adicionando…">Adicionar banco</SubmitButton>
             </ActionForm>
             {banks.length > 0 ? (
-              <ul className="mt-4 space-y-1 text-sm text-muted-foreground">
+              <ul className="mt-4 space-y-2">
                 {banks.map((bank) => (
-                  <li key={bank.id}>{bank.name}</li>
+                  <li key={bank.id}>
+                    <EditInstitutionRow institutionId={bank.id} name={bank.name} />
+                  </li>
                 ))}
               </ul>
             ) : null}
@@ -211,6 +218,7 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                 <TableHead>Rendimento</TableHead>
                 <TableHead className="text-right">Saldo</TableHead>
                 <TableHead className="text-right">Atualizar</TableHead>
+                <TableHead className="text-right">Editar</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -248,6 +256,24 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                         OK
                       </SubmitButton>
                     </ActionForm>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <EditAccountDialog
+                      account={{
+                        id: row.id,
+                        name: row.name,
+                        kind: row.kind as AccountKind,
+                        costCenterId: row.costCenterId,
+                        institutionId: row.institutionId,
+                        parentAccountId: row.parentAccountId,
+                        balanceCents: row.balanceCents,
+                        yieldType: row.yieldType as YieldType,
+                        yieldBps: row.yieldBps,
+                      }}
+                      centers={centerOptions}
+                      banks={bankOptions}
+                      parentOptions={parentOptions}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

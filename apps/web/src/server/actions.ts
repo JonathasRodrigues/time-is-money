@@ -4,6 +4,9 @@ import {
   createTransaction,
   createFinancing,
   payInstallmentWithCategory,
+  payInstallmentsBulk,
+  rebuildFinancing,
+  softDeleteFinancing,
   createPendingTransaction,
   createMonthlySeries,
   payTransaction,
@@ -25,10 +28,10 @@ import {
 } from '@tim/db';
 import {
   createAccountSchema,
-  createCategorySchema,
-  createCostCenterSchema,
-  createFinancingSchema,
   createInstitutionSchema,
+  createCostCenterSchema,
+  createCategorySchema,
+  createFinancingSchema,
   createMonthlySeriesSchema,
   createPendingTransactionSchema,
   createTransactionSchema,
@@ -37,6 +40,8 @@ import {
   payTransactionSchema,
   transactionTypeSchema,
   updateAccountBalanceSchema,
+  updateAccountSchema,
+  updateInstitutionSchema,
   updatePendingAmountSchema,
 } from '@tim/validators';
 import { requireCapability, requireSession } from '@tim/auth';
@@ -137,9 +142,51 @@ export async function createCategoryAction(formData: FormData) {
   revalidateApp();
 }
 
-export async function createAccountAction(formData: FormData) {
+export async function createInstitutionAction(formData: FormData) {
   const session = requireSession(await getAuthSession());
   requireCapability(session, 'settings.write');
+  const input = createInstitutionSchema.parse({
+    householdId: session.householdId,
+    name: String(formData.get('name')),
+  });
+  const db = getDb();
+  await db.insert(institutions).values(input);
+  revalidateApp();
+}
+
+export async function updateInstitutionAction(formData: FormData) {
+  const session = requireSession(await getAuthSession());
+  requireCapability(session, 'settings.write');
+  const input = updateInstitutionSchema.parse({
+    householdId: session.householdId,
+    institutionId: String(formData.get('institutionId')),
+    name: String(formData.get('name')),
+  });
+  const db = getDb();
+  const [updated] = await db
+    .update(institutions)
+    .set({ name: input.name })
+    .where(
+      and(
+        eq(institutions.id, input.institutionId),
+        eq(institutions.householdId, session.householdId),
+      ),
+    )
+    .returning();
+  if (!updated) throw new Error('Banco não encontrado');
+  revalidateApp();
+}
+
+function parseAccountFormFields(formData: FormData): {
+  kind: 'cash' | 'checking' | 'investment_pot';
+  yieldType: 'none' | 'cdi' | 'fixed_annual';
+  yieldBps: number | null;
+  balanceCents: number;
+  institutionId: string | null;
+  parentAccountId: string | null;
+  name: string;
+  costCenterId: string;
+} {
   const balanceRaw = String(formData.get('balance') || '').trim();
   const yieldRaw = String(formData.get('yieldValue') || '').trim();
   const yieldTypeRaw = String(formData.get('yieldType') || 'none');
@@ -154,21 +201,30 @@ export async function createAccountAction(formData: FormData) {
   let yieldBps: number | null = null;
   if (yieldType !== 'none' && yieldRaw !== '') {
     const numeric = Number(yieldRaw.replace(',', '.'));
-    yieldBps = yieldType === 'cdi' ? Math.round(numeric * 100) : Math.round(numeric * 100);
+    yieldBps = Math.round(numeric * 100);
   }
 
-  const input = createAccountSchema.parse({
-    householdId: session.householdId,
-    costCenterId: String(formData.get('costCenterId')),
-    name: String(formData.get('name')),
+  return {
+    kind,
+    yieldType,
+    yieldBps,
+    balanceCents: balanceRaw === '' ? 0 : Math.round(Number(balanceRaw.replace(',', '.')) * 100),
     institutionId: formData.get('institutionId') ? String(formData.get('institutionId')) : null,
     parentAccountId: formData.get('parentAccountId')
       ? String(formData.get('parentAccountId'))
       : null,
-    kind,
-    balanceCents: balanceRaw === '' ? 0 : Math.round(Number(balanceRaw.replace(',', '.')) * 100),
-    yieldType,
-    yieldBps,
+    name: String(formData.get('name')),
+    costCenterId: String(formData.get('costCenterId')),
+  };
+}
+
+export async function createAccountAction(formData: FormData) {
+  const session = requireSession(await getAuthSession());
+  requireCapability(session, 'settings.write');
+  const fields = parseAccountFormFields(formData);
+  const input = createAccountSchema.parse({
+    householdId: session.householdId,
+    ...fields,
   });
   const db = getDb();
   await db.insert(accounts).values({
@@ -185,15 +241,37 @@ export async function createAccountAction(formData: FormData) {
   revalidateApp();
 }
 
-export async function createInstitutionAction(formData: FormData) {
+export async function updateAccountAction(formData: FormData) {
   const session = requireSession(await getAuthSession());
   requireCapability(session, 'settings.write');
-  const input = createInstitutionSchema.parse({
+  const fields = parseAccountFormFields(formData);
+  const input = updateAccountSchema.parse({
     householdId: session.householdId,
-    name: String(formData.get('name')),
+    accountId: String(formData.get('accountId')),
+    ...fields,
   });
+
+  if (input.parentAccountId === input.accountId) {
+    throw new Error('Uma conta não pode ser pai de si mesma');
+  }
+
   const db = getDb();
-  await db.insert(institutions).values(input);
+  const [updated] = await db
+    .update(accounts)
+    .set({
+      costCenterId: input.costCenterId,
+      name: input.name,
+      institutionId: input.institutionId ?? null,
+      parentAccountId: input.parentAccountId ?? null,
+      kind: input.kind,
+      balanceCents: input.balanceCents,
+      yieldType: input.yieldType,
+      yieldBps: input.yieldType === 'none' ? null : (input.yieldBps ?? null),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)))
+    .returning();
+  if (!updated) throw new Error('Conta não encontrada');
   revalidateApp();
 }
 
@@ -268,8 +346,65 @@ export async function payInstallmentAction(formData: FormData) {
     installmentId: String(formData.get('installmentId')),
     paidOn: String(formData.get('paidOn')),
     categoryId: String(formData.get('categoryId') || '') || undefined,
-    amountCents: amountRaw === '' ? undefined : Math.round(Number(amountRaw) * 100),
-    extraAmortizationCents: extraRaw === '' ? undefined : Math.round(Number(extraRaw) * 100),
+    amountCents:
+      amountRaw === '' ? undefined : Math.round(Number(amountRaw.replace(',', '.')) * 100),
+    extraAmortizationCents:
+      extraRaw === '' ? undefined : Math.round(Number(extraRaw.replace(',', '.')) * 100),
+  });
+  revalidateApp();
+}
+
+export async function payInstallmentsBulkAction(formData: FormData) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const ids = formData.getAll('installmentId').map(String);
+  const amounts = formData.getAll('amount').map(String);
+  if (ids.length === 0) throw new Error('Selecione ao menos uma parcela');
+  const items = ids.map((installmentId, index) => ({
+    installmentId,
+    amountCents: Math.round(Number((amounts[index] ?? '0').replace(',', '.')) * 100),
+  }));
+  await payInstallmentsBulk(ctx, {
+    householdId: session.householdId,
+    paidOn: String(formData.get('paidOn')),
+    categoryId: String(formData.get('categoryId') || '') || undefined,
+    items,
+  });
+  revalidateApp();
+}
+
+export async function rebuildFinancingAction(formData: FormData) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const systemRaw = String(formData.get('amortizationSystem') || 'fixed');
+  const amortizationSystem =
+    systemRaw === 'price' || systemRaw === 'sac' || systemRaw === 'fixed' ? systemRaw : 'fixed';
+  const installmentRaw = String(formData.get('installmentAmount') || '');
+  const rateRaw = String(formData.get('annualRate') || '');
+  await rebuildFinancing(ctx, {
+    householdId: session.householdId,
+    financingId: String(formData.get('financingId')),
+    name: String(formData.get('name')),
+    institution: String(formData.get('institution') || '') || undefined,
+    principalCents: Math.round(Number(String(formData.get('principal')).replace(',', '.')) * 100),
+    installmentCount: Number(formData.get('installmentCount')),
+    installmentAmountCents:
+      installmentRaw === ''
+        ? undefined
+        : Math.round(Number(installmentRaw.replace(',', '.')) * 100),
+    firstDueOn: String(formData.get('firstDueOn')),
+    annualRateBps: rateRaw === '' ? undefined : Math.round(Number(rateRaw.replace(',', '.')) * 100),
+    amortizationSystem,
+  });
+  revalidateApp();
+}
+
+export async function deleteFinancingAction(formData: FormData) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  await softDeleteFinancing(ctx, {
+    householdId: session.householdId,
+    financingId: String(formData.get('financingId')),
   });
   revalidateApp();
 }

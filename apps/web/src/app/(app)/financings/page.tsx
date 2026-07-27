@@ -169,12 +169,16 @@ export default async function FinancingsPage({
             }) => (
               <FinancingContractCard
                 key={financing.id}
+                financingId={financing.id}
                 name={financing.name}
                 institution={financing.institution}
                 system={system}
                 rateLabel={rateLabel}
                 installmentCount={financing.installmentCount}
                 principalCents={financing.principalCents}
+                installmentAmountCents={financing.installmentAmountCents}
+                annualRateBps={financing.annualRateBps}
+                firstDueOn={financing.firstDueOn}
                 pendingCount={pending.length}
                 remainingCents={remainingCents}
                 paidCents={paidCents}

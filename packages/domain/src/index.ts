@@ -156,6 +156,8 @@ export interface AmortizationSummary {
   totalPaidCents: number;
   totalInterestCents: number;
   schedule: AmortizationRow[];
+  /** Taxa a.a. em bps usada no cronograma (informada ou implícita no modo fixo). */
+  annualRateBps?: number;
 }
 
 /** Taxa mensal nominal a partir de basis points anuais (padrão bancário BR: a.a. / 12). */
@@ -163,13 +165,66 @@ export function annualBpsToMonthlyRate(annualRateBps: number): number {
   return annualRateBps / 10_000 / 12;
 }
 
+export function monthlyRateToAnnualBps(monthlyRate: number): number {
+  return Math.round(monthlyRate * 12 * 10_000);
+}
+
 function roundCents(value: number): number {
   return Math.round(value);
+}
+
+function pricePmtCents(
+  principalCents: number,
+  installmentCount: number,
+  monthlyRate: number,
+): number {
+  if (installmentCount <= 0) return 0;
+  if (monthlyRate === 0) return roundCents(principalCents / installmentCount);
+  const factor = (1 + monthlyRate) ** installmentCount;
+  return roundCents((principalCents * (monthlyRate * factor)) / (factor - 1));
+}
+
+/**
+ * Resolve a taxa mensal implícita para que a parcela Price ≈ `pmtCents`.
+ * Retorna null se a parcela for menor que a amortização sem juros (não quita o principal).
+ */
+export function solveMonthlyRateFromPmt(input: {
+  principalCents: number;
+  installmentCount: number;
+  pmtCents: number;
+}): number | null {
+  const { principalCents, installmentCount, pmtCents } = input;
+  if (principalCents <= 0 || installmentCount <= 0 || pmtCents <= 0) return null;
+
+  const zeroRatePmt = principalCents / installmentCount;
+  if (pmtCents + 0.5 < zeroRatePmt) return null;
+  if (Math.abs(pmtCents - zeroRatePmt) < 0.5) return 0;
+
+  let lo = 0;
+  let hi = 1; // 100% a.m. — teto numérico
+  // Garante que hi cubra o PMT desejado
+  for (
+    let expand = 0;
+    expand < 20 && pricePmtCents(principalCents, installmentCount, hi) < pmtCents;
+    expand += 1
+  ) {
+    hi *= 2;
+  }
+  if (pricePmtCents(principalCents, installmentCount, hi) < pmtCents) return null;
+
+  for (let iter = 0; iter < 80; iter += 1) {
+    const mid = (lo + hi) / 2;
+    const calc = pricePmtCents(principalCents, installmentCount, mid);
+    if (calc > pmtCents) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 function summarizeSchedule(
   system: AmortizationSystem,
   schedule: AmortizationRow[],
+  annualRateBps?: number,
 ): AmortizationSummary {
   if (schedule.length === 0) {
     return {
@@ -180,6 +235,7 @@ function summarizeSchedule(
       totalPaidCents: 0,
       totalInterestCents: 0,
       schedule: [],
+      annualRateBps,
     };
   }
   const first = schedule[0]!;
@@ -192,6 +248,7 @@ function summarizeSchedule(
     totalPaidCents: schedule.reduce((acc, row) => acc + row.amountCents, 0),
     totalInterestCents: schedule.reduce((acc, row) => acc + row.interestCents, 0),
     schedule,
+    annualRateBps,
   };
 }
 
@@ -235,7 +292,7 @@ export function simulatePrice(input: {
     });
   }
 
-  return summarizeSchedule('price', schedule);
+  return summarizeSchedule('price', schedule, annualRateBps);
 }
 
 /**
@@ -270,35 +327,78 @@ export function simulateSac(input: {
     });
   }
 
-  return summarizeSchedule('sac', schedule);
+  return summarizeSchedule('sac', schedule, annualRateBps);
 }
 
-/** Parcela fixa informada pelo usuário (sem recalcular juros). */
+/**
+ * Parcela contratual fixa informada pelo usuário.
+ * Monta o cronograma no estilo Price: a parcela é o valor real (juros + amortização).
+ * Se a taxa não for informada, deriva a taxa implícita a partir de principal, prazo e parcela.
+ */
 export function simulateFixed(input: {
   principalCents: number;
   installmentCount: number;
   installmentAmountCents: number;
   firstDueOn: string;
+  annualRateBps?: number;
 }): AmortizationSummary {
   const { principalCents, installmentCount, installmentAmountCents, firstDueOn } = input;
+  const pmt = installmentAmountCents;
+
+  let monthlyRate = 0;
+  let annualRateBps = input.annualRateBps;
+
+  if (annualRateBps != null && annualRateBps > 0) {
+    monthlyRate = annualBpsToMonthlyRate(annualRateBps);
+  } else {
+    const solved = solveMonthlyRateFromPmt({
+      principalCents,
+      installmentCount,
+      pmtCents: pmt,
+    });
+    if (solved == null) {
+      // Parcela insuficiente para o principal no prazo — amortiza o possível sem inventar juros.
+      let balance = principalCents;
+      const schedule: AmortizationRow[] = [];
+      for (let n = 1; n <= installmentCount && balance > 0; n += 1) {
+        const principalPart = Math.min(pmt, balance);
+        balance -= principalPart;
+        schedule.push({
+          number: n,
+          dueOn: addMonths(firstDueOn, n - 1),
+          amountCents: principalPart,
+          interestCents: 0,
+          principalCents: principalPart,
+          balanceAfterCents: Math.max(0, balance),
+        });
+      }
+      return summarizeSchedule('fixed', schedule, 0);
+    }
+    monthlyRate = solved;
+    annualRateBps = monthlyRateToAnnualBps(solved);
+  }
+
   let balance = principalCents;
   const schedule: AmortizationRow[] = [];
-
   for (let n = 1; n <= installmentCount; n += 1) {
-    const principalPart = Math.min(installmentAmountCents, balance);
-    const interestCents = Math.max(0, installmentAmountCents - principalPart);
+    const interestCents = roundCents(balance * monthlyRate);
+    let principalPart = n === installmentCount ? balance : pmt - interestCents;
+    if (principalPart < 0) principalPart = 0;
+    if (principalPart > balance) principalPart = balance;
+    const amountCents = n === installmentCount ? interestCents + principalPart : pmt;
     balance -= principalPart;
+    if (balance < 0) balance = 0;
     schedule.push({
       number: n,
       dueOn: addMonths(firstDueOn, n - 1),
-      amountCents: installmentAmountCents,
+      amountCents,
       interestCents,
       principalCents: principalPart,
-      balanceAfterCents: Math.max(0, balance),
+      balanceAfterCents: balance,
     });
   }
 
-  return summarizeSchedule('fixed', schedule);
+  return summarizeSchedule('fixed', schedule, annualRateBps);
 }
 
 export function buildAmortizationSchedule(input: {
@@ -339,6 +439,7 @@ export function buildAmortizationSchedule(input: {
     installmentCount: input.installmentCount,
     installmentAmountCents: input.installmentAmountCents,
     firstDueOn: input.firstDueOn,
+    annualRateBps: input.annualRateBps,
   });
 }
 
@@ -378,7 +479,7 @@ export function rebuildRemainingSchedule(input: {
 }): AmortizationSummary {
   const balanceCents = Math.max(0, Math.floor(input.balanceCents));
   if (balanceCents === 0) {
-    return summarizeSchedule(input.system, []);
+    return summarizeSchedule(input.system, [], input.annualRateBps);
   }
 
   const maxInstallments = input.maxInstallments ?? 600;
@@ -408,7 +509,7 @@ export function rebuildRemainingSchedule(input: {
         balanceAfterCents: Math.max(0, balance),
       });
     }
-    return summarizeSchedule('sac', schedule);
+    return summarizeSchedule('sac', schedule, input.annualRateBps);
   }
 
   const pmt = input.installmentAmountCents;
@@ -438,7 +539,11 @@ export function rebuildRemainingSchedule(input: {
     });
   }
 
-  return summarizeSchedule(input.system === 'fixed' ? 'fixed' : 'price', schedule);
+  return summarizeSchedule(
+    input.system === 'fixed' ? 'fixed' : 'price',
+    schedule,
+    input.annualRateBps,
+  );
 }
 
 export const DEFAULT_EXPENSE_CATEGORIES: Array<{ name: string; children?: string[] }> = [

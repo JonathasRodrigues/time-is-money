@@ -9,18 +9,22 @@ import { cn } from '@/lib/utils';
 type SubmitButtonProps = React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     pendingLabel?: string;
+    /** Quando a action é client wrapper / useTransition, passe isto — useFormStatus sozinho não basta. */
+    isPending?: boolean;
   };
 
 export function SubmitButton({
   children,
   pendingLabel = 'Salvando…',
+  isPending,
   className,
   disabled,
   variant,
   size,
   ...props
 }: SubmitButtonProps): React.ReactElement {
-  const { pending } = useFormStatus();
+  const { pending: formPending } = useFormStatus();
+  const pending = Boolean(isPending) || formPending;
 
   return (
     <Button

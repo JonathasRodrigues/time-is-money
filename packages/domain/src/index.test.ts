@@ -6,6 +6,7 @@ import {
   formatIsoDateBr,
   rebuildRemainingSchedule,
   resolveEntities,
+  simulateFixed,
   simulatePrice,
   simulateSac,
 } from './index';
@@ -65,6 +66,23 @@ describe('domain', () => {
       '2026-02-28',
       '2026-03-31',
     ]);
+  });
+
+  it('simulates fixed installment with interest (not pure amortization)', () => {
+    const result = simulateFixed({
+      principalCents: 100_000_00,
+      installmentCount: 48,
+      installmentAmountCents: 3_200_00,
+      firstDueOn: '2024-01-10',
+    });
+    expect(result.system).toBe('fixed');
+    expect(result.schedule).toHaveLength(48);
+    expect(result.schedule[0]?.amountCents).toBe(3_200_00);
+    expect(result.schedule[0]?.interestCents).toBeGreaterThan(0);
+    expect(result.schedule[0]?.principalCents).toBeLessThan(3_200_00);
+    expect(result.totalInterestCents).toBeGreaterThan(0);
+    expect(result.schedule[47]?.balanceAfterCents).toBe(0);
+    expect(result.annualRateBps).toBeGreaterThan(0);
   });
 
   it('simulates SAC with decreasing installments', () => {

@@ -33,7 +33,8 @@ export function NewFinancingSheet({
         <SheetHeader>
           <SheetTitle>Novo financiamento</SheetTitle>
           <SheetDescription>
-            Simule Price, SAC ou parcela fixa e grave só depois de confirmar o cronograma.
+            Simule Price, SAC ou parcela fixa do contrato (com juros) e grave só depois de confirmar
+            o cronograma.
           </SheetDescription>
         </SheetHeader>
         <div className="px-4 pb-6">

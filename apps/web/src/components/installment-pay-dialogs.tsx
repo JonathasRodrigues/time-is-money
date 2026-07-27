@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { formatBrlFromCents, formatIsoDateBr } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { runWithToast } from '@/lib/action-toast';
-import { payInstallmentAction } from '@/server/actions';
+import { payInstallmentAction, payInstallmentsBulkAction } from '@/server/actions';
 
 export interface FinancingInstallmentRow {
   id: string;
@@ -61,38 +61,71 @@ function CategorySelect({
   );
 }
 
-/** Confirma pagamento da parcela do mês (sem amortização extra). */
-export function PayMonthDialog({
+/** Confirma pagamento de uma ou várias parcelas, com valor editável. */
+export function PayInstallmentsDialog({
   open,
   onOpenChange,
-  installment,
+  installments,
   categories,
   todayIso,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  installment: FinancingInstallmentRow;
+  installments: FinancingInstallmentRow[];
   categories: Array<{ id: string; name: string }>;
   todayIso: string;
 }): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    const next: Record<string, string> = {};
+    for (const item of installments) {
+      next[item.id] = (item.amountCents / 100).toFixed(2);
+    }
+    setAmounts(next);
+  }, [open, installments]);
+
+  const totalCents = useMemo(() => {
+    let sum = 0;
+    for (const item of installments) {
+      const cents = parseAmountToCents(amounts[item.id] ?? '');
+      if (cents == null) return null;
+      sum += cents;
+    }
+    return sum;
+  }, [amounts, installments]);
+
+  const single = installments.length === 1 ? installments[0] : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Pagar parcela #{installment.number}</DialogTitle>
-          <DialogDescription>Confirme o pagamento da parcela do mês no extrato.</DialogDescription>
+          <DialogTitle>
+            {single ? `Pagar parcela #${single.number}` : `Pagar ${installments.length} parcelas`}
+          </DialogTitle>
+          <DialogDescription>
+            Ajuste o valor pago se for diferente do cronograma. O pagamento registra a despesa no
+            extrato.
+          </DialogDescription>
         </DialogHeader>
 
         <form
           action={async (formData) => {
             startTransition(async () => {
               try {
-                await runWithToast(() => payInstallmentAction(formData), {
-                  loading: 'Registrando pagamento…',
-                  success: 'Parcela paga',
-                });
+                await runWithToast(
+                  () =>
+                    installments.length === 1
+                      ? payInstallmentAction(formData)
+                      : payInstallmentsBulkAction(formData),
+                  {
+                    loading: 'Registrando pagamento…',
+                    success: installments.length === 1 ? 'Parcela paga' : 'Parcelas pagas',
+                  },
+                );
                 onOpenChange(false);
               } catch {
                 // toast já exibido
@@ -101,30 +134,50 @@ export function PayMonthDialog({
           }}
           className="grid gap-4"
         >
-          <input type="hidden" name="installmentId" value={installment.id} />
-          <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
-            <p className="font-medium tabular-nums">
-              {formatBrlFromCents(installment.amountCents)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Vence {formatIsoDateBr(installment.dueOn)} · juros{' '}
-              {formatBrlFromCents(installment.interestCents)} · amortização{' '}
-              {formatBrlFromCents(installment.principalCents)}
-            </p>
+          <div className="space-y-3">
+            {installments.map((item) => (
+              <div key={item.id} className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
+                <input type="hidden" name="installmentId" value={item.id} />
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="font-medium">
+                    #{item.number} · {formatIsoDateBr(item.dueOn)}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    cronograma {formatBrlFromCents(item.amountCents)}
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor={`pay-amount-${item.id}`}>Valor pago (R$)</Label>
+                  <Input
+                    id={`pay-amount-${item.id}`}
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={amounts[item.id] ?? ''}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setAmounts((prev) => ({ ...prev, [item.id]: value }));
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+            <span className="font-medium">Total</span>
+            <span className="font-semibold tabular-nums">
+              {totalCents != null ? formatBrlFromCents(totalCents) : '—'}
+            </span>
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={`pay-on-${installment.id}`}>Pagar em</Label>
-            <Input
-              id={`pay-on-${installment.id}`}
-              name="paidOn"
-              type="date"
-              required
-              defaultValue={todayIso}
-            />
+            <Label htmlFor="pay-on-bulk">Pagar em</Label>
+            <Input id="pay-on-bulk" name="paidOn" type="date" required defaultValue={todayIso} />
           </div>
-          <input type="hidden" name="amount" value={(installment.amountCents / 100).toFixed(2)} />
-          <CategorySelect id={`pay-cat-${installment.id}`} categories={categories} />
+          <CategorySelect id="pay-cat-bulk" categories={categories} />
 
           <DialogFooter>
             <Button
@@ -135,7 +188,11 @@ export function PayMonthDialog({
             >
               Cancelar
             </Button>
-            <SubmitButton disabled={pending} pendingLabel="Pagando…">
+            <SubmitButton
+              disabled={pending || totalCents == null}
+              isPending={pending}
+              pendingLabel="Pagando…"
+            >
               Confirmar pagamento
             </SubmitButton>
           </DialogFooter>
@@ -145,44 +202,54 @@ export function PayMonthDialog({
   );
 }
 
-/**
- * Amortizar uma parcela futura: paga a do mês atual + amortiza só o principal
- * da parcela escolhida (sem os juros futuros), neste mês, e recalcula o prazo.
- */
-export function AmortizeFutureDialog({
+/** Amortiza o principal de uma ou mais parcelas futuras junto com a parcela do mês. */
+export function AmortizeSelectedDialog({
   open,
   onOpenChange,
   currentMonth,
-  future,
+  futures,
   categories,
   todayIso,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentMonth: FinancingInstallmentRow;
-  future: FinancingInstallmentRow;
+  futures: FinancingInstallmentRow[];
   categories: Array<{ id: string; name: string }>;
   todayIso: string;
 }): React.ReactElement {
-  const suggestedPrincipalCents =
-    future.principalCents > 0
-      ? future.principalCents
-      : Math.max(0, future.amountCents - future.interestCents);
+  const suggestedPrincipalCents = futures.reduce((acc, future) => {
+    const principal =
+      future.principalCents > 0
+        ? future.principalCents
+        : Math.max(0, future.amountCents - future.interestCents);
+    return acc + principal;
+  }, 0);
 
+  const [amountDraft, setAmountDraft] = useState((currentMonth.amountCents / 100).toFixed(2));
   const [extraDraft, setExtraDraft] = useState((suggestedPrincipalCents / 100).toFixed(2));
   const [pending, startTransition] = useTransition();
 
+  useEffect(() => {
+    if (!open) return;
+    setAmountDraft((currentMonth.amountCents / 100).toFixed(2));
+    setExtraDraft((suggestedPrincipalCents / 100).toFixed(2));
+  }, [open, currentMonth.amountCents, suggestedPrincipalCents]);
+
+  const amountCents = useMemo(() => parseAmountToCents(amountDraft), [amountDraft]);
   const extraCents = useMemo(() => parseAmountToCents(extraDraft), [extraDraft]);
-  const totalCents = extraCents != null ? currentMonth.amountCents + extraCents : null;
+  const totalCents = amountCents != null && extraCents != null ? amountCents + extraCents : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Amortizar parcela #{future.number}</DialogTitle>
+          <DialogTitle>
+            Amortizar {futures.length} parcela{futures.length === 1 ? '' : 's'}
+          </DialogTitle>
           <DialogDescription>
-            Você paga a parcela deste mês e antecipa só o principal da parcela futura — os juros
-            dela não entram.
+            Paga a parcela do mês (valor editável) e antecipa o principal das selecionadas — os
+            juros futuros não entram.
           </DialogDescription>
         </DialogHeader>
 
@@ -203,57 +270,54 @@ export function AmortizeFutureDialog({
           className="grid gap-4"
         >
           <input type="hidden" name="installmentId" value={currentMonth.id} />
-          <input type="hidden" name="amount" value={(currentMonth.amountCents / 100).toFixed(2)} />
+          <input type="hidden" name="amount" value={amountDraft} />
           <input type="hidden" name="extraAmortization" value={extraDraft} />
 
           <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Parcela futura #{future.number}
+              Parcelas futuras
             </p>
-            <div className="flex items-center justify-between gap-3 text-muted-foreground">
-              <span>Valor da parcela</span>
-              <span className="tabular-nums">{formatBrlFromCents(future.amountCents)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 text-muted-foreground">
-              <span>Juros (não paga)</span>
-              <span className="tabular-nums">− {formatBrlFromCents(future.interestCents)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">Principal a amortizar</span>
+            {futures.map((future) => {
+              const principal =
+                future.principalCents > 0
+                  ? future.principalCents
+                  : Math.max(0, future.amountCents - future.interestCents);
+              return (
+                <div key={future.id} className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    #{future.number} · {formatIsoDateBr(future.dueOn)}
+                  </span>
+                  <span className="tabular-nums">{formatBrlFromCents(principal)}</span>
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between gap-3 border-t pt-2">
+              <span className="font-medium">Principal sugerido</span>
               <span className="font-medium tabular-nums">
                 {formatBrlFromCents(suggestedPrincipalCents)}
               </span>
             </div>
           </div>
 
-          <div className="space-y-2 rounded-lg border px-3 py-2.5 text-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              A pagar neste mês
-            </p>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">
-                Parcela #{currentMonth.number} (juros + amort.)
-              </span>
-              <span className="tabular-nums">{formatBrlFromCents(currentMonth.amountCents)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">Amortização antecipada</span>
-              <span className="tabular-nums">
-                {extraCents != null ? formatBrlFromCents(extraCents) : '—'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-t pt-2">
-              <span className="font-medium">Total</span>
-              <span className="text-base font-semibold tabular-nums">
-                {totalCents != null ? formatBrlFromCents(totalCents) : '—'}
-              </span>
-            </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`pay-month-${currentMonth.id}`}>
+              Parcela #{currentMonth.number} (R$)
+            </Label>
+            <Input
+              id={`pay-month-${currentMonth.id}`}
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={amountDraft}
+              onChange={(event) => setAmountDraft(event.target.value)}
+            />
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={`extra-${future.id}`}>Valor a amortizar (R$)</Label>
+            <Label htmlFor={`extra-bulk-${currentMonth.id}`}>Amortização antecipada (R$)</Label>
             <Input
-              id={`extra-${future.id}`}
+              id={`extra-bulk-${currentMonth.id}`}
               type="number"
               step="0.01"
               min="0.01"
@@ -261,16 +325,19 @@ export function AmortizeFutureDialog({
               value={extraDraft}
               onChange={(event) => setExtraDraft(event.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Só principal — sem juros da #{future.number}. O prazo é reduzido mantendo o valor das
-              parcelas.
-            </p>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+            <span className="font-medium">Total neste mês</span>
+            <span className="font-semibold tabular-nums">
+              {totalCents != null ? formatBrlFromCents(totalCents) : '—'}
+            </span>
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor={`amort-on-${future.id}`}>Pagar em</Label>
+            <Label htmlFor={`amort-on-${currentMonth.id}`}>Pagar em</Label>
             <Input
-              id={`amort-on-${future.id}`}
+              id={`amort-on-${currentMonth.id}`}
               name="paidOn"
               type="date"
               required
@@ -278,7 +345,7 @@ export function AmortizeFutureDialog({
             />
           </div>
 
-          <CategorySelect id={`amort-cat-${future.id}`} categories={categories} />
+          <CategorySelect id={`amort-cat-${currentMonth.id}`} categories={categories} />
 
           <DialogFooter>
             <Button
@@ -289,7 +356,11 @@ export function AmortizeFutureDialog({
             >
               Cancelar
             </Button>
-            <SubmitButton disabled={pending || totalCents == null} pendingLabel="Confirmando…">
+            <SubmitButton
+              disabled={pending || totalCents == null}
+              isPending={pending}
+              pendingLabel="Confirmando…"
+            >
               Confirmar neste mês
             </SubmitButton>
           </DialogFooter>

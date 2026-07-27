@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { formatBrlFromCents, formatIsoDateBr, type AmortizationSystem } from '@tim/domain';
 import {
-  AmortizeFutureDialog,
-  PayMonthDialog,
+  AmortizeSelectedDialog,
+  PayInstallmentsDialog,
   type FinancingInstallmentRow,
 } from '@/components/installment-pay-dialogs';
+import { RebuildFinancingDialog } from '@/components/rebuild-financing-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,12 +30,16 @@ const SYSTEM_LABEL: Record<AmortizationSystem, string> = {
 export type { FinancingInstallmentRow };
 
 export function FinancingContractCard({
+  financingId,
   name,
   institution,
   system,
   rateLabel,
   installmentCount,
   principalCents,
+  installmentAmountCents,
+  annualRateBps,
+  firstDueOn,
   pendingCount,
   remainingCents,
   paidCents,
@@ -44,12 +49,16 @@ export function FinancingContractCard({
   todayIso,
   installments,
 }: {
+  financingId: string;
   name: string;
   institution: string | null;
   system: AmortizationSystem;
   rateLabel: string;
   installmentCount: number;
   principalCents: number;
+  installmentAmountCents: number;
+  annualRateBps: number | null;
+  firstDueOn: string;
   pendingCount: number;
   remainingCents: number;
   paidCents: number;
@@ -60,9 +69,44 @@ export function FinancingContractCard({
   installments: FinancingInstallmentRow[];
 }): React.ReactElement {
   const [showSchedule, setShowSchedule] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [payOpen, setPayOpen] = useState(false);
-  const [amortizeTarget, setAmortizeTarget] = useState<FinancingInstallmentRow | null>(null);
+  const [amortizeOpen, setAmortizeOpen] = useState(false);
   const paidCount = installmentCount - pendingCount;
+
+  const pendingInstallments = useMemo(
+    () => installments.filter((item) => item.status === 'pending'),
+    [installments],
+  );
+
+  const selectedPending = useMemo(
+    () => pendingInstallments.filter((item) => selectedIds.has(item.id)),
+    [pendingInstallments, selectedIds],
+  );
+
+  const selectedFutures = useMemo(
+    () => selectedPending.filter((item) => nextPending != null && item.id !== nextPending.id),
+    [selectedPending, nextPending],
+  );
+
+  const canPay = selectedPending.length > 0 && categories.length > 0;
+  const canAmortize = nextPending != null && selectedFutures.length > 0 && categories.length > 0;
+
+  function toggleId(id: string): void {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllPending(): void {
+    setSelectedIds((prev) => {
+      if (prev.size === pendingInstallments.length) return new Set();
+      return new Set(pendingInstallments.map((item) => item.id));
+    });
+  }
 
   return (
     <article className="overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -72,6 +116,20 @@ export function FinancingContractCard({
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
               <Badge variant="secondary">{SYSTEM_LABEL[system]}</Badge>
+              <RebuildFinancingDialog
+                financing={{
+                  id: financingId,
+                  name,
+                  institution,
+                  system,
+                  principalCents,
+                  installmentCount,
+                  installmentAmountCents,
+                  annualRateBps,
+                  firstDueOn,
+                  paidCount,
+                }}
+              />
             </div>
             <p className="text-sm text-muted-foreground">
               {institution || 'Sem instituição'} · {rateLabel} · {installmentCount}x · principal{' '}
@@ -115,33 +173,62 @@ export function FinancingContractCard({
         ) : nextPending ? (
           <p className="text-sm text-muted-foreground">
             Próxima: #{nextPending.number} · {formatIsoDateBr(nextPending.dueOn)} ·{' '}
-            {formatBrlFromCents(nextPending.amountCents)}. Use{' '}
-            <span className="font-medium text-foreground">Pagar</span> no mês ou{' '}
-            <span className="font-medium text-foreground">Amortizar</span> em parcelas futuras.
+            {formatBrlFromCents(nextPending.amountCents)}. Selecione parcelas para pagar (com valor
+            editável) ou amortizar.
           </p>
         ) : null}
       </div>
 
       <div className="p-4 sm:p-5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="mb-3 -ml-2 gap-1.5 text-muted-foreground"
-          onClick={() => setShowSchedule((open) => !open)}
-        >
-          <ChevronDown
-            className={cn('size-4 transition-transform', showSchedule ? 'rotate-0' : '-rotate-90')}
-          />
-          {showSchedule ? 'Ocultar cronograma' : 'Ver cronograma'}
-          <span className="tabular-nums">({installments.length})</span>
-        </Button>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-1.5 text-muted-foreground"
+            onClick={() => setShowSchedule((open) => !open)}
+          >
+            <ChevronDown
+              className={cn(
+                'size-4 transition-transform',
+                showSchedule ? 'rotate-0' : '-rotate-90',
+              )}
+            />
+            {showSchedule ? 'Ocultar cronograma' : 'Ver cronograma'}
+            <span className="tabular-nums">({installments.length})</span>
+          </Button>
+
+          {showSchedule && pendingInstallments.length > 0 ? (
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={toggleAllPending}>
+                {selectedIds.size === pendingInstallments.length
+                  ? 'Limpar seleção'
+                  : 'Selecionar pendentes'}
+              </Button>
+              <Button type="button" size="sm" disabled={!canPay} onClick={() => setPayOpen(true)}>
+                Pagar{selectedPending.length > 0 ? ` (${selectedPending.length})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!canAmortize}
+                onClick={() => setAmortizeOpen(true)}
+              >
+                Amortizar{selectedFutures.length > 0 ? ` (${selectedFutures.length})` : ''}
+              </Button>
+            </div>
+          ) : null}
+        </div>
 
         {showSchedule ? (
           <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <span className="sr-only">Selecionar</span>
+                  </TableHead>
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>Vencimento</TableHead>
                   <TableHead>Status</TableHead>
@@ -149,17 +236,28 @@ export function FinancingContractCard({
                   <TableHead className="text-right">Juros</TableHead>
                   <TableHead className="text-right">Amortização</TableHead>
                   <TableHead className="text-right">Pago em</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {installments.map((item) => {
                   const isNext = nextPending?.id === item.id;
-                  const isFuturePending =
-                    item.status === 'pending' && nextPending != null && !isNext;
+                  const isPending = item.status === 'pending';
 
                   return (
                     <TableRow key={item.id} className={isNext ? 'bg-muted/40' : undefined}>
+                      <TableCell>
+                        {isPending ? (
+                          <input
+                            type="checkbox"
+                            className="size-4"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => toggleId(item.id)}
+                            aria-label={`Selecionar parcela ${item.number}`}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="tabular-nums font-medium">{item.number}</TableCell>
                       <TableCell className="tabular-nums">{formatIsoDateBr(item.dueOn)}</TableCell>
                       <TableCell>
@@ -185,24 +283,6 @@ export function FinancingContractCard({
                       <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                         {item.paidOn ? formatIsoDateBr(item.paidOn) : '—'}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {isNext && categories.length > 0 ? (
-                          <Button type="button" size="sm" onClick={() => setPayOpen(true)}>
-                            Pagar
-                          </Button>
-                        ) : isFuturePending && categories.length > 0 ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAmortizeTarget(item)}
-                          >
-                            Amortizar
-                          </Button>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -212,25 +292,28 @@ export function FinancingContractCard({
         ) : null}
       </div>
 
-      {nextPending && categories.length > 0 ? (
-        <PayMonthDialog
+      {canPay && payOpen ? (
+        <PayInstallmentsDialog
           open={payOpen}
-          onOpenChange={setPayOpen}
-          installment={nextPending}
+          onOpenChange={(open) => {
+            setPayOpen(open);
+            if (!open) setSelectedIds(new Set());
+          }}
+          installments={selectedPending}
           categories={categories}
           todayIso={todayIso}
         />
       ) : null}
 
-      {nextPending && amortizeTarget && categories.length > 0 ? (
-        <AmortizeFutureDialog
-          key={amortizeTarget.id}
-          open={amortizeTarget != null}
+      {canAmortize && nextPending && amortizeOpen ? (
+        <AmortizeSelectedDialog
+          open={amortizeOpen}
           onOpenChange={(open) => {
-            if (!open) setAmortizeTarget(null);
+            setAmortizeOpen(open);
+            if (!open) setSelectedIds(new Set());
           }}
           currentMonth={nextPending}
-          future={amortizeTarget}
+          futures={selectedFutures}
           categories={categories}
           todayIso={todayIso}
         />
