@@ -1,10 +1,6 @@
 import { cn } from '@/lib/utils';
 
-/**
- * Classes padrão para linha/card durante mutation.
- * - `active`: item sendo processado (opacidade média + fundo)
- * - demais itens, com `busy`: mais apagados e sem clique
- */
+/** Feedback leve só no item ativo — não apaga o resto da tabela. */
 export function busySurfaceClassName({
   busy,
   active,
@@ -16,8 +12,8 @@ export function busySurfaceClassName({
 }): string {
   return cn(
     'transition-opacity duration-150',
-    active && 'bg-muted/40 opacity-55',
-    busy && !active && 'pointer-events-none opacity-40',
+    active && 'opacity-70',
+    busy && !active && 'pointer-events-none',
     className,
   );
 }

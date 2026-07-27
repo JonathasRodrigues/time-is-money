@@ -26,7 +26,7 @@ export async function myActionAction(input: MyInput): Promise<MyResult> {
 2. Lógica de negócio em `@tim/application`, não na action
 3. Auth + capability antes de qualquer side effect
 4. Tipos explícitos em input/output — sem `any`
-5. Revalidar path se necessário: `revalidatePath('/transactions')`
+5. Revalidar só o necessário — paths das telas afetadas (ver `actions.ts`: `revalidatePaths` / `MONEY_PATHS`). Use `revalidatePath('/', 'layout')` só quando o shell muda (prefs, members, banner de renda no layout).
 
 ## Organização de arquivos
 

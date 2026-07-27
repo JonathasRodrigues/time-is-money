@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 type ServerFormAction = (formData: FormData) => Promise<unknown>;
 
 /**
- * Form padrão TIM para server actions:
- * toast + formulário meio desativado enquanto salva.
+ * Form padrão TIM: toast + botão com spinner.
+ * Sem fade pesado no formulário inteiro (parecia “travado”).
  */
 export function ActionForm({
   action,
@@ -45,14 +45,7 @@ function FormBusyBody({
   const { pending } = useFormStatus();
 
   return (
-    <div
-      className={cn(
-        'transition-opacity duration-150',
-        pending && 'pointer-events-none opacity-55',
-        className,
-      )}
-      aria-busy={pending || undefined}
-    >
+    <div className={cn(className)} aria-busy={pending || undefined}>
       <fieldset disabled={pending} className="contents">
         {children}
       </fieldset>

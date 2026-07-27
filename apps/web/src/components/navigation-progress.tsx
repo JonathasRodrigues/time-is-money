@@ -10,9 +10,7 @@ function normalizeRouteKey(pathname: string, search: string): string {
   return query ? `${pathname}?${query}` : pathname;
 }
 
-/**
- * Única barra de progresso do app — fica no header durante link/filtro.
- */
+/** Barra no header em troca de tela e em filtro. */
 export function NavigationProgress(): React.ReactElement {
   const pathname = usePathname();
   const searchParams = useSearchParams();

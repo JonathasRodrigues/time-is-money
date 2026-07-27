@@ -18,6 +18,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { JarvisDock } from '@/components/jarvis-dock';
+import { BrandLogo } from '@/components/brand-logo';
 import { NavigatingContent } from '@/components/navigating-content';
 import { NavigatingProvider } from '@/components/navigating';
 import { NavigationProgress } from '@/components/navigation-progress';
@@ -195,9 +196,7 @@ function AppShellFrame({
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader className="gap-3 px-3 py-4">
           <div className="flex items-center gap-3 overflow-hidden px-1">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#152033] text-sm font-semibold tracking-tight text-[#eef2f6]">
-              TIM
-            </div>
+            <BrandLogo size={36} className="rounded-md" />
             <div className="min-w-0 group-data-[collapsible=icon]:hidden">
               <p className="truncate text-base font-semibold leading-tight tracking-tight">
                 Time is Money

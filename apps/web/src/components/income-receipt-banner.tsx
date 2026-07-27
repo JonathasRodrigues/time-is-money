@@ -1,14 +1,13 @@
 'use client';
 
+import { useOptimistic, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { formatBrlFromCents, formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { MoneyInput } from '@/components/ui/money-input';
-import { useBusyAction } from '@/hooks/use-busy-action';
-import { runWithToast } from '@/lib/action-toast';
-import { busySurfaceClassName } from '@/lib/busy-ui';
+import { beginActionToast, runWithToast } from '@/lib/action-toast';
 import {
   confirmIncomeItemAction,
   confirmIncomeReceiptAction,
@@ -23,8 +22,9 @@ export interface PendingIncomeItem {
   suggestedCents: number | null;
 }
 
-type BusyKey = 'confirm-day' | 'snooze' | `item:${string}`;
-
+/**
+ * Banner de recebimento — item some na hora (otimista); servidor revalida em background.
+ */
 export function IncomeReceiptBanner({
   incomeDay,
   pendingIncomes = [],
@@ -32,8 +32,14 @@ export function IncomeReceiptBanner({
   incomeDay?: number | null;
   pendingIncomes?: PendingIncomeItem[];
 }): React.ReactElement {
-  const { busy, busyKey, isBusy, run } = useBusyAction<BusyKey>();
-  const hasSeries = pendingIncomes.length > 0;
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const [items, removeOptimistic] = useOptimistic(pendingIncomes, (current, id: string) =>
+    current.filter((item) => item.id !== id),
+  );
+
+  const hasSeries = items.length > 0;
+  const busy = busyKey != null;
 
   return (
     <div className="mb-6 rounded-xl border border-primary/25 bg-primary/5 px-4 py-4">
@@ -56,14 +62,18 @@ export function IncomeReceiptBanner({
                 size="sm"
                 disabled={busy}
                 onClick={() => {
-                  void run('confirm-day', async () => {
+                  const toastId = beginActionToast('Confirmando…');
+                  setBusyKey('confirm-day');
+                  startTransition(async () => {
                     try {
                       await runWithToast(() => confirmIncomeReceiptAction(), {
-                        loading: 'Confirmando…',
+                        toastId,
                         success: 'Recebimento confirmado',
                       });
                     } catch {
                       // toast / redirect
+                    } finally {
+                      setBusyKey(null);
                     }
                   });
                 }}
@@ -84,14 +94,18 @@ export function IncomeReceiptBanner({
               variant="outline"
               disabled={busy}
               onClick={() => {
-                void run('snooze', async () => {
+                const toastId = beginActionToast('Ok…');
+                setBusyKey('snooze');
+                startTransition(async () => {
                   try {
                     await runWithToast(() => snoozeIncomeReceiptAction(), {
-                      loading: 'Ok…',
+                      toastId,
                       success: 'Lembrete adiado',
                     });
                   } catch {
                     // toast / redirect
+                  } finally {
+                    setBusyKey(null);
                   }
                 });
               }}
@@ -112,20 +126,14 @@ export function IncomeReceiptBanner({
 
         {hasSeries ? (
           <ul className="space-y-2 border-t border-primary/15 pt-3">
-            {pendingIncomes.map((item) => {
+            {items.map((item) => {
               const suggestion = item.amountCents ?? item.suggestedCents;
-              const active = isBusy(`item:${item.id}`);
+              const active = busyKey === `item:${item.id}`;
 
               return (
                 <li
                   key={item.id}
-                  aria-busy={active || undefined}
-                  className={busySurfaceClassName({
-                    busy,
-                    active,
-                    className:
-                      'flex flex-col gap-2 rounded-lg border border-border/70 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between',
-                  })}
+                  className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{item.description}</p>
@@ -141,14 +149,19 @@ export function IncomeReceiptBanner({
                     onSubmit={(event) => {
                       event.preventDefault();
                       const formData = new FormData(event.currentTarget);
-                      void run(`item:${item.id}`, async () => {
+                      const toastId = beginActionToast('Confirmando…');
+                      setBusyKey(`item:${item.id}`);
+                      startTransition(async () => {
+                        removeOptimistic(item.id);
                         try {
                           await runWithToast(() => confirmIncomeItemAction(formData), {
-                            loading: 'Confirmando…',
+                            toastId,
                             success: 'Receita confirmada',
                           });
                         } catch {
-                          // toast já exibido
+                          // toast; lista volta se falhar
+                        } finally {
+                          setBusyKey(null);
                         }
                       });
                     }}

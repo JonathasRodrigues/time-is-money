@@ -6,10 +6,12 @@ import {
   parseBrlToCents,
   PLAN_KIND_LABEL,
   sumPlanItems,
+  TRAVEL_ITEM_TEMPLATES,
   type PlanKind,
 } from '@tim/domain';
 import { Plus, Trash2 } from 'lucide-react';
 import { LinkAccountSelect } from '@/components/link-account-select';
+import { PlanGoalSimulator } from '@/components/plan-goal-simulator';
 import { PlanPayoffSimulator } from '@/components/plan-payoff-simulator';
 import { PlanScheduleGenerator } from '@/components/plan-schedule-generator';
 import { nativeSelectClassName } from '@/components/page-header';
@@ -76,10 +78,12 @@ export function NewPlanSheet({
   const [name, setName] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [financingId, setFinancingId] = useState(presetFinancingId ?? '');
-  const [items, setItems] = useState<DraftItem[]>([
-    { label: 'Hotel', amount: '5000' },
-    { label: 'Passagem', amount: '3000' },
-  ]);
+  const [items, setItems] = useState<DraftItem[]>(
+    TRAVEL_ITEM_TEMPLATES.slice(0, 2).map((template) => ({
+      label: template.label,
+      amount: template.label === 'Hospedagem' ? '5000' : '3000',
+    })),
+  );
   const [linkedAccountId, setLinkedAccountId] = useState('');
   const [createLinkedAccount, setCreateLinkedAccount] = useState(potAccounts.length === 0);
   const [linkedAccountName, setLinkedAccountName] = useState('');
@@ -132,10 +136,12 @@ export function NewPlanSheet({
     } else if (nextKind === 'travel') {
       setFinancingId('');
       setName('Viagem');
-      setItems([
-        { label: 'Hotel', amount: '5000' },
-        { label: 'Passagem', amount: '3000' },
-      ]);
+      setItems(
+        TRAVEL_ITEM_TEMPLATES.map((template) => ({
+          label: template.label,
+          amount: '',
+        })),
+      );
     } else {
       setFinancingId('');
       setName('');
@@ -317,14 +323,33 @@ export function NewPlanSheet({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>Itens do plano</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setItems((prev) => [...prev, { label: '', amount: '' }])}
-                  >
-                    Adicionar
-                  </Button>
+                  <div className="flex flex-wrap gap-1">
+                    {kind === 'travel' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setItems(
+                            TRAVEL_ITEM_TEMPLATES.map((template) => ({
+                              label: template.label,
+                              amount: '',
+                            })),
+                          )
+                        }
+                      >
+                        Templates viagem
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setItems((prev) => [...prev, { label: '', amount: '' }])}
+                    >
+                      Adicionar
+                    </Button>
+                  </div>
                 </div>
                 {items.map((item, index) => (
                   <div key={index} className="grid grid-cols-[1fr_8rem_auto] gap-2">
@@ -380,6 +405,24 @@ export function NewPlanSheet({
               amortizationCents={selectedFinancing.amortizationCents}
               firstDueOn={selectedFinancing.firstDueOn}
               targetDate={targetDate}
+              onSuggestedReserveCents={(cents) => {
+                setItems([
+                  {
+                    label: 'Reserva para quitação',
+                    amount: String(Math.round(cents / 100)),
+                  },
+                ]);
+                setGenMonthlyAmount((Math.round(cents / 12) / 100).toFixed(2).replace('.', ','));
+              }}
+            />
+          ) : null}
+
+          {kind !== 'financing_payoff' && targetCents > 0 && targetDate ? (
+            <PlanGoalSimulator
+              targetCents={targetCents}
+              savedCents={0}
+              targetDate={targetDate}
+              defaultMonthlyCents={monthlyTargetCents}
             />
           ) : null}
 

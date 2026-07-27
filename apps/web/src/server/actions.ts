@@ -66,10 +66,48 @@ import { redirect } from 'next/navigation';
 import { createAppContext } from '@/server/context';
 import { getAuthSession, getDb } from '@/server/db';
 
-/** Uma revalidação de layout cobre as páginas do app — mais rápido que N revalidatePath. */
+/**
+ * Invalida só as rotas afetadas (cache stale para a próxima visita).
+ * Mais leve que `revalidatePath('/', 'layout')` — o flight RSC pós-action fica menor.
+ */
+function revalidatePaths(paths: readonly string[]): void {
+  for (const path of paths) {
+    revalidatePath(path);
+  }
+}
+
+/** Shell / banner de renda no layout `(app)`. */
 function revalidateApp(): void {
   revalidatePath('/', 'layout');
 }
+
+/** Listas e saldos após pagar / lançar / transferir. */
+const MONEY_PATHS = ['/payments', '/dashboard', '/transactions', '/wealth'] as const;
+
+const FINANCING_PATHS = [
+  '/financings',
+  '/payments',
+  '/dashboard',
+  '/transactions',
+  '/wealth',
+] as const;
+
+const PLANNING_PATHS = ['/planning', '/dashboard', '/wealth'] as const;
+
+const SETTINGS_ENTITY_PATHS = [
+  '/settings',
+  '/settings/accounts',
+  '/settings/categories',
+  '/settings/cost-centers',
+  '/cadastros',
+  '/cadastros/accounts',
+  '/cadastros/categories',
+  '/cadastros/cost-centers',
+  '/payments',
+  '/dashboard',
+  '/transactions',
+  '/jarvis',
+] as const;
 
 export async function createHouseholdAction(name: string) {
   const { userId } = await auth();
@@ -121,7 +159,7 @@ export async function createTransactionAction(formData: FormData) {
     notes: String(formData.get('notes') || '') || undefined,
   });
   await createTransaction(ctx, parsed, 'manual');
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function createCostCenterAction(formData: FormData) {
@@ -134,7 +172,7 @@ export async function createCostCenterAction(formData: FormData) {
   });
   const db = getDb();
   await db.insert(costCenters).values(input);
-  revalidateApp();
+  revalidatePaths(SETTINGS_ENTITY_PATHS);
 }
 
 export async function createCategoryAction(formData: FormData) {
@@ -153,7 +191,7 @@ export async function createCategoryAction(formData: FormData) {
     type: input.type,
     parentId: input.parentId ?? undefined,
   });
-  revalidateApp();
+  revalidatePaths(SETTINGS_ENTITY_PATHS);
 }
 
 export async function createInstitutionAction(formData: FormData) {
@@ -165,7 +203,7 @@ export async function createInstitutionAction(formData: FormData) {
   });
   const db = getDb();
   await db.insert(institutions).values(input);
-  revalidateApp();
+  revalidatePaths(SETTINGS_ENTITY_PATHS);
 }
 
 export async function updateInstitutionAction(formData: FormData) {
@@ -188,7 +226,7 @@ export async function updateInstitutionAction(formData: FormData) {
     )
     .returning();
   if (!updated) throw new Error('Banco não encontrado');
-  revalidateApp();
+  revalidatePaths(SETTINGS_ENTITY_PATHS);
 }
 
 function parseAccountFormFields(formData: FormData): {
@@ -252,7 +290,7 @@ export async function createAccountAction(formData: FormData) {
     yieldType: input.yieldType,
     yieldBps: input.yieldBps ?? null,
   });
-  revalidateApp();
+  revalidatePaths([...SETTINGS_ENTITY_PATHS, '/wealth']);
 }
 
 export async function updateAccountAction(formData: FormData) {
@@ -286,7 +324,7 @@ export async function updateAccountAction(formData: FormData) {
     .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)))
     .returning();
   if (!updated) throw new Error('Conta não encontrada');
-  revalidateApp();
+  revalidatePaths([...SETTINGS_ENTITY_PATHS, '/wealth']);
 }
 
 export async function updateAccountBalanceAction(formData: FormData) {
@@ -304,7 +342,7 @@ export async function updateAccountBalanceAction(formData: FormData) {
     .update(accounts)
     .set({ balanceCents: input.balanceCents, updatedAt: new Date() })
     .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)));
-  revalidateApp();
+  revalidatePaths([...SETTINGS_ENTITY_PATHS, '/wealth']);
 }
 
 export async function createTransferAction(formData: FormData) {
@@ -321,7 +359,7 @@ export async function createTransferAction(formData: FormData) {
     description: descriptionRaw === '' ? undefined : descriptionRaw,
   });
   await createTransfer(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function createFinancingAction(formData: FormData) {
@@ -356,7 +394,7 @@ export async function createFinancingAction(formData: FormData) {
     category,
   });
   await createFinancing(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(FINANCING_PATHS);
 }
 
 export async function payInstallmentAction(formData: FormData) {
@@ -374,7 +412,7 @@ export async function payInstallmentAction(formData: FormData) {
     extraAmortizationCents:
       extraRaw === '' ? undefined : Math.round(Number(extraRaw.replace(',', '.')) * 100),
   });
-  revalidateApp();
+  revalidatePaths(FINANCING_PATHS);
 }
 
 export async function payInstallmentsBulkAction(formData: FormData) {
@@ -394,7 +432,7 @@ export async function payInstallmentsBulkAction(formData: FormData) {
     categoryId: String(formData.get('categoryId') || '') || undefined,
     items,
   });
-  revalidateApp();
+  revalidatePaths(FINANCING_PATHS);
 }
 
 export async function rebuildFinancingAction(formData: FormData) {
@@ -420,7 +458,7 @@ export async function rebuildFinancingAction(formData: FormData) {
     annualRateBps: rateRaw === '' ? undefined : Math.round(Number(rateRaw.replace(',', '.')) * 100),
     amortizationSystem,
   });
-  revalidateApp();
+  revalidatePaths(FINANCING_PATHS);
 }
 
 export async function deleteFinancingAction(formData: FormData) {
@@ -430,7 +468,7 @@ export async function deleteFinancingAction(formData: FormData) {
     householdId: session.householdId,
     financingId: String(formData.get('financingId')),
   });
-  revalidateApp();
+  revalidatePaths(FINANCING_PATHS);
 }
 
 export async function createPendingTransactionAction(formData: FormData) {
@@ -451,7 +489,7 @@ export async function createPendingTransactionAction(formData: FormData) {
     installmentCount,
   });
   await createPendingTransaction(ctx, parsed, 'manual');
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function createMonthlySeriesAction(formData: FormData) {
@@ -484,7 +522,7 @@ export async function payTransactionAction(formData: FormData) {
     amountCents: amountRaw === '' ? undefined : Math.round(Number(amountRaw) * 100),
   });
   await payTransaction(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function payTransactionsBulkAction(input: {
@@ -496,7 +534,7 @@ export async function payTransactionsBulkAction(input: {
     householdId: session.householdId,
     items: input.items,
   });
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function updatePendingAmountAction(formData: FormData) {
@@ -509,7 +547,7 @@ export async function updatePendingAmountAction(formData: FormData) {
     amountCents: amountRaw === '' ? null : Math.round(Number(amountRaw) * 100),
   });
   await updatePendingAmount(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function updateTransactionAction(formData: FormData) {
@@ -529,7 +567,7 @@ export async function updateTransactionAction(formData: FormData) {
     description: String(formData.get('description') || '') || undefined,
   });
   await updateTransaction(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function deleteTransactionAction(formData: FormData) {
@@ -539,13 +577,13 @@ export async function deleteTransactionAction(formData: FormData) {
     householdId: session.householdId,
     transactionId: String(formData.get('transactionId')),
   });
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function ensurePaymentInstancesAction() {
   const ctx = await createAppContext();
   await ensureSeriesInstancesForMonth(ctx);
-  revalidateApp();
+  revalidatePaths(MONEY_PATHS);
 }
 
 export async function confirmIncomeReceiptAction() {
@@ -648,7 +686,7 @@ export async function createPlanAction(input: {
     householdId: session.householdId,
   });
   const plan = await createPlan(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(PLANNING_PATHS);
   return { planId: plan.id };
 }
 
@@ -666,7 +704,7 @@ export async function updatePlanAction(input: {
     householdId: session.householdId,
   });
   await updatePlan(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(PLANNING_PATHS);
 }
 
 export async function upsertPlanItemsAction(input: {
@@ -680,7 +718,7 @@ export async function upsertPlanItemsAction(input: {
     householdId: session.householdId,
   });
   await upsertPlanItems(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(PLANNING_PATHS);
 }
 
 export async function upsertPlanContributionsAction(input: {
@@ -695,7 +733,7 @@ export async function upsertPlanContributionsAction(input: {
     householdId: session.householdId,
   });
   await upsertPlanContributions(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(PLANNING_PATHS);
 }
 
 export async function deletePlanAction(planId: string) {
@@ -706,7 +744,7 @@ export async function deletePlanAction(planId: string) {
     householdId: session.householdId,
   });
   await softDeletePlan(ctx, parsed);
-  revalidateApp();
+  revalidatePaths(PLANNING_PATHS);
 }
 
 export async function snoozeIncomeReceiptAction() {

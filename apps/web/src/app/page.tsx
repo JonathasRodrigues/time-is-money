@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { isDemoMode } from '@tim/mocks';
+import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 import { shouldUseClerk } from '@/components/auth-shell';
 
@@ -24,7 +25,10 @@ export default async function HomePage(): Promise<React.ReactElement> {
           }}
         />
         <header className="relative z-10 flex items-center justify-between px-6 py-5 text-[#eef2f6]">
-          <p className="text-2xl font-semibold tracking-tight">Time is Money</p>
+          <div className="flex items-center gap-3">
+            <BrandLogo size={40} priority className="drop-shadow-sm" />
+            <p className="text-2xl font-semibold tracking-tight">Time is Money</p>
+          </div>
           <div className="flex items-center gap-3">
             {clerk ? (
               <>

@@ -3,10 +3,7 @@
 import { useFormStatus } from 'react-dom';
 import { cn } from '@/lib/utils';
 
-/**
- * Envolve o conteúdo de um <form action={…}> e aplica o padrão visual de pending.
- * Deve ser filho (direto ou não) do form.
- */
+/** Filho de <form action> — desabilita campos sem fade agressivo. */
 export function FormBusySurface({
   children,
   className,
@@ -17,14 +14,7 @@ export function FormBusySurface({
   const { pending } = useFormStatus();
 
   return (
-    <div
-      className={cn(
-        'transition-opacity duration-150',
-        pending && 'pointer-events-none opacity-55',
-        className,
-      )}
-      aria-busy={pending || undefined}
-    >
+    <div className={cn(className)} aria-busy={pending || undefined}>
       <fieldset disabled={pending} className="contents">
         {children}
       </fieldset>

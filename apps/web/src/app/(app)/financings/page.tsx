@@ -1,7 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense } from 'react';
-import { formatBrlFromCents, type AmortizationSystem, type FinancingCategory } from '@tim/domain';
+import {
+  estimateFinancingResidual,
+  formatBrlFromCents,
+  type AmortizationSystem,
+  type FinancingCategory,
+} from '@tim/domain';
 import { accounts, categories, costCenters, financings, installments } from '@tim/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -89,6 +94,15 @@ async function FinancingsView({
         i.principalCents > 0 ? i.principalCents : Math.max(0, i.amountCents - i.interestCents);
       return acc + principal;
     }, 0);
+    const residual = estimateFinancingResidual({
+      installments: parcel.map((item) => ({
+        status: item.status,
+        principalCents: item.principalCents,
+        amountCents: item.amountCents,
+        interestCents: item.interestCents,
+        balanceAfterCents: item.balanceAfterCents,
+      })),
+    });
     totalRemaining += remainingCents;
     totalPaid += paidCents;
     totalAmortizeCents += amortizeCents;
@@ -111,6 +125,8 @@ async function FinancingsView({
       paidCents,
       remainingCents,
       amortizeCents,
+      residualBalanceCents: residual.balanceCents,
+      amortizationPerPeriodCents: residual.amortizationPerPeriodCents,
       progress,
       system,
       rateLabel,
@@ -201,6 +217,8 @@ async function FinancingsView({
               paidCents,
               remainingCents,
               amortizeCents,
+              residualBalanceCents,
+              amortizationPerPeriodCents,
               progress,
               system,
               rateLabel,
@@ -239,8 +257,8 @@ async function FinancingsView({
                 potAccounts={potAccounts}
                 planCenters={planCenters}
                 financingPayoffContext={{
-                  balanceCents: remainingCents,
-                  amortizationCents: amortizeCents,
+                  balanceCents: residualBalanceCents,
+                  amortizationCents: amortizationPerPeriodCents,
                 }}
               />
             ),

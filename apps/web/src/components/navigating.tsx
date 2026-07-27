@@ -13,10 +13,12 @@ import {
 import { usePathname, useSearchParams } from 'next/navigation';
 
 type NavigatingContextValue = {
-  /** Qualquer navegação em andamento (link ou filtro). */
-  isPending: boolean;
-  /** Só transitions de filtro / router.push suave. */
+  /** Troca de rota via Link (menu). */
+  isLinkPending: boolean;
+  /** Só filtro / searchParams (mantém UI anterior). */
   isFilterPending: boolean;
+  /** Qualquer um dos dois — use com cuidado. */
+  isPending: boolean;
   beginLinkNavigation: () => void;
   runTransition: (action: () => void) => void;
 };
@@ -56,16 +58,15 @@ export function NavigatingProvider({ children }: { children: ReactNode }): React
     [startTransition],
   );
 
-  const isPending = filterPending || linkPending;
-
   const value = useMemo(
     () => ({
-      isPending,
+      isLinkPending: linkPending,
       isFilterPending: filterPending,
+      isPending: filterPending || linkPending,
       beginLinkNavigation,
       runTransition,
     }),
-    [isPending, filterPending, beginLinkNavigation, runTransition],
+    [linkPending, filterPending, beginLinkNavigation, runTransition],
   );
 
   return <NavigatingContext.Provider value={value}>{children}</NavigatingContext.Provider>;
@@ -79,7 +80,7 @@ export function useNavigating(): NavigatingContextValue {
   return ctx;
 }
 
-/** Para filtros — pending visual só da própria transition. */
+/** Filtros — transition sem apagar a tabela. */
 export function useSoftNavigate(): {
   isPending: boolean;
   navigate: (action: () => void) => void;

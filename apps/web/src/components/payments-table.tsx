@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   formatBrlFromCents,
   formatCentsForBrInput,
   formatIsoDateBr,
+  normalizeMoneyFormValue,
   PAYABLE_KIND_LABEL,
+  parseBrlToCents,
 } from '@tim/domain';
 import type { PayableKind } from '@tim/domain';
 import { Badge } from '@/components/ui/badge';
@@ -22,9 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useBusyAction } from '@/hooks/use-busy-action';
-import { runWithToast } from '@/lib/action-toast';
-import { busySurfaceClassName } from '@/lib/busy-ui';
+import { beginActionToast, runWithToast } from '@/lib/action-toast';
 import {
   payTransactionAction,
   payTransactionsBulkAction,
@@ -43,7 +43,9 @@ export interface PayableRow {
   estimatedCents: number;
 }
 
-type BusyKey = 'bulk' | `pay:${string}` | `save:${string}`;
+type OptimisticAction =
+  | { type: 'remove'; ids: string[] }
+  | { type: 'patchAmount'; id: string; amountCents: number | null };
 
 function payAmountCents(row: PayableRow): number | null {
   if (row.amountCents != null && row.amountCents > 0) return row.amountCents;
@@ -60,6 +62,16 @@ function defaultPaidOn(row: PayableRow, today: string): string {
   return row.dueOn ?? today;
 }
 
+function parseAmountFromForm(formData: FormData): number | null {
+  const raw = normalizeMoneyFormValue(String(formData.get('amount') || ''));
+  if (!raw) return null;
+  return parseBrlToCents(raw);
+}
+
+/**
+ * Contas a pagar/receber — update otimista (some da lista na hora).
+ * RSC + Server Action ainda revalida em background; a UI não espera.
+ */
 export function PaymentsTable({
   rows,
   today,
@@ -72,7 +84,21 @@ export function PaymentsTable({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [paidOns, setPaidOns] = useState<Record<string, string>>({});
   const [applyAllDate, setApplyAllDate] = useState('');
-  const { busy, busyKey, isBusy, run } = useBusyAction<BusyKey>();
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  const [optimisticRows, dispatchOptimistic] = useOptimistic(
+    rows,
+    (current, action: OptimisticAction) => {
+      if (action.type === 'remove') {
+        const remove = new Set(action.ids);
+        return current.filter((row) => !remove.has(row.id));
+      }
+      return current.map((row) =>
+        row.id === action.id ? { ...row, amountCents: action.amountCents } : row,
+      );
+    },
+  );
 
   const isReceive = mode === 'receive';
   const actionVerb = isReceive ? 'Receber' : 'Pagar';
@@ -83,22 +109,27 @@ export function PaymentsTable({
     ? (count: number) => (count === 1 ? 'Recebimento registrado' : 'Recebimentos registrados')
     : (count: number) => (count === 1 ? 'Pagamento registrado' : 'Pagamentos registrados');
 
+  const busy = busyKey != null;
+
   useEffect(() => {
     setPaidOns((prev) => {
       const next: Record<string, string> = {};
-      for (const row of rows) {
+      for (const row of optimisticRows) {
         next[row.id] = prev[row.id] ?? defaultPaidOn(row, today);
       }
       return next;
     });
-  }, [rows, today]);
+  }, [optimisticRows, today]);
 
   const selectableIds = useMemo(
-    () => rows.filter((row) => payAmountCents(row) != null).map((row) => row.id),
-    [rows],
+    () => optimisticRows.filter((row) => payAmountCents(row) != null).map((row) => row.id),
+    [optimisticRows],
   );
 
-  const selectedRows = useMemo(() => rows.filter((row) => selected.has(row.id)), [rows, selected]);
+  const selectedRows = useMemo(
+    () => optimisticRows.filter((row) => selected.has(row.id)),
+    [optimisticRows, selected],
+  );
 
   const selectedTotalCents = useMemo(
     () => selectedRows.reduce((sum, row) => sum + (payAmountCents(row) ?? 0), 0),
@@ -147,49 +178,70 @@ export function PaymentsTable({
       );
 
     if (items.length === 0) return;
+    const ids = items.map((item) => item.transactionId);
+    const toastId = beginActionToast(`${actionGerund} ${items.length}…`);
+    setBusyKey('bulk');
+    setSelected(new Set());
 
-    void run('bulk', async () => {
+    startTransition(async () => {
+      dispatchOptimistic({ type: 'remove', ids });
       try {
         await runWithToast(() => payTransactionsBulkAction({ items }), {
-          loading: `${actionGerund} ${items.length}…`,
+          toastId,
           success: bulkSuccess(items.length),
         });
-        setSelected(new Set());
       } catch {
-        // toast já exibido
+        // toast; useOptimistic reverte quando a transition termina sem novo props
+      } finally {
+        setBusyKey(null);
       }
     });
   }
 
   function saveRow(rowId: string, form: HTMLFormElement): void {
     const formData = new FormData(form);
-    void run(`save:${rowId}`, async () => {
+    const amountCents = parseAmountFromForm(formData);
+    const toastId = beginActionToast('Salvando valor…');
+    setBusyKey(`save:${rowId}`);
+
+    startTransition(async () => {
+      dispatchOptimistic({ type: 'patchAmount', id: rowId, amountCents });
       try {
         await runWithToast(() => updatePendingAmountAction(formData), {
-          loading: 'Salvando valor…',
+          toastId,
           success: 'Valor atualizado',
         });
       } catch {
-        // toast já exibido
+        // toast
+      } finally {
+        setBusyKey(null);
       }
     });
   }
 
   function payRow(rowId: string, form: HTMLFormElement): void {
     const formData = new FormData(form);
-    void run(`pay:${rowId}`, async () => {
+    const toastId = beginActionToast(
+      isReceive ? 'Registrando recebimento…' : 'Registrando pagamento…',
+    );
+    setBusyKey(`pay:${rowId}`);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(rowId);
+      return next;
+    });
+
+    startTransition(async () => {
+      dispatchOptimistic({ type: 'remove', ids: [rowId] });
       try {
         await runWithToast(() => payTransactionAction(formData), {
-          loading: isReceive ? 'Registrando recebimento…' : 'Registrando pagamento…',
+          toastId,
           success: actionPast,
         });
-        setSelected((prev) => {
-          const next = new Set(prev);
-          next.delete(rowId);
-          return next;
-        });
       } catch {
-        // toast já exibido
+        // toast; lista volta se a action falhar
+      } finally {
+        setBusyKey(null);
       }
     });
   }
@@ -281,27 +333,24 @@ export function PaymentsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.length === 0 ? (
+          {optimisticRows.length === 0 ? (
             <TableRow>
               <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                 Nada pendente neste filtro.
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row) => {
+            optimisticRows.map((row) => {
               const overdue = (row.dueOn ?? '') < today;
               const canSelect = payAmountCents(row) != null;
               const rowPaidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
-              const payingThis = isBusy(`pay:${row.id}`);
-              const saving = isBusy(`save:${row.id}`);
-              const active = payingThis || saving || (busyKey === 'bulk' && selected.has(row.id));
+              const saving = busyKey === `save:${row.id}`;
 
               return (
                 <TableRow
                   key={row.id}
                   data-state={selected.has(row.id) ? 'selected' : undefined}
-                  aria-busy={active || undefined}
-                  className={busySurfaceClassName({ busy, active })}
+                  className={saving ? 'opacity-70' : undefined}
                 >
                   <TableCell>
                     <input
@@ -405,14 +454,7 @@ export function PaymentsTable({
                           if (form) payRow(row.id, form);
                         }}
                       >
-                        {payingThis ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
-                            {actionGerund}…
-                          </>
-                        ) : (
-                          actionVerb
-                        )}
+                        {actionVerb}
                       </Button>
                     </form>
                   </TableCell>

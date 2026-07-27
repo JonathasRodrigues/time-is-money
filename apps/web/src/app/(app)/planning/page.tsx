@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense } from 'react';
 import {
+  estimateFinancingResidual,
   formatBrlFromCents,
   formatIsoDateBr,
   PLAN_KIND_LABEL,
@@ -110,17 +111,17 @@ async function PlanningView({
 
   const financingOptions = financingRows
     .map((financing) => {
-      const pending = installmentRows.filter(
-        (item) => item.financingId === financing.id && item.status === 'pending',
-      );
-      const balanceCents = pending.reduce((sum, item) => sum + item.amountCents, 0);
-      const amortizationCents = pending.reduce((sum, item) => {
-        const principal =
-          item.principalCents > 0
-            ? item.principalCents
-            : Math.max(0, item.amountCents - item.interestCents);
-        return sum + principal;
-      }, 0);
+      const related = installmentRows.filter((item) => item.financingId === financing.id);
+      const pending = related.filter((item) => item.status === 'pending');
+      const { balanceCents, amortizationPerPeriodCents } = estimateFinancingResidual({
+        installments: related.map((item) => ({
+          status: item.status,
+          principalCents: item.principalCents,
+          amountCents: item.amountCents,
+          interestCents: item.interestCents,
+          balanceAfterCents: item.balanceAfterCents,
+        })),
+      });
       return {
         id: financing.id,
         name: financing.name,
@@ -128,7 +129,7 @@ async function PlanningView({
         system: financing.amortizationSystem as AmortizationSystem,
         annualRateBps: financing.annualRateBps,
         installmentAmountCents: financing.installmentAmountCents,
-        amortizationCents,
+        amortizationCents: amortizationPerPeriodCents,
         firstDueOn: pending[0]?.dueOn ?? financing.firstDueOn,
       };
     })

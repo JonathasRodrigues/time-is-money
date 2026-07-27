@@ -8,6 +8,7 @@ import {
   PlanContributionSchedule,
   type ContributionRow,
 } from '@/components/plan-contribution-schedule';
+import { PlanGoalSimulator } from '@/components/plan-goal-simulator';
 import { PlanPayoffSimulator } from '@/components/plan-payoff-simulator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -176,6 +177,14 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
               amortizationCents={plan.financingPayoff.amortizationCents}
               firstDueOn={plan.financingPayoff.firstDueOn}
               targetDate={plan.targetDate}
+            />
+          ) : null}
+          {plan.kind !== 'financing_payoff' && plan.targetCents > 0 ? (
+            <PlanGoalSimulator
+              targetCents={plan.targetCents}
+              savedCents={plan.savedCents}
+              targetDate={plan.targetDate}
+              defaultMonthlyCents={plan.monthlyTargetCents}
             />
           ) : null}
           {contributions.length > 0 ? (
