@@ -8,6 +8,7 @@ import {
   FilterSelect,
   centerFilterOptions,
 } from '@/components/filters';
+import { useSoftNavigate } from '@/components/navigating';
 import { buildScopeHref, type DateRange, type ScopeQuery } from '@/lib/scope-query';
 
 /** Filtros de período + centro (Dashboard). */
@@ -29,6 +30,7 @@ export function ScopeFilters({
   extras?: Pick<ScopeQuery, 'type' | 'status' | 'category' | 'q'>;
 }): React.ReactElement {
   const router = useRouter();
+  const { isPending, navigate } = useSoftNavigate();
 
   const baseQuery: ScopeQuery = {
     center: activeCenterId,
@@ -41,12 +43,14 @@ export function ScopeFilters({
     q: extras?.q,
   };
 
-  function push(query: ScopeQuery) {
-    router.push(buildScopeHref(basePath, query), { scroll: false });
+  function push(query: ScopeQuery): void {
+    navigate(() => {
+      router.push(buildScopeHref(basePath, query), { scroll: false });
+    });
   }
 
   return (
-    <FilterBar>
+    <FilterBar pending={isPending}>
       <FilterField label="Período">
         <FilterDateRangePicker
           value={{

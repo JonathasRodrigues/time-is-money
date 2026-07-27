@@ -8,6 +8,7 @@ import {
   FilterSelect,
   centerFilterOptions,
 } from '@/components/filters';
+import { useSoftNavigate } from '@/components/navigating';
 import { buildScopeHref, type DateRange, type ScopeQuery } from '@/lib/scope-query';
 
 const KIND_OPTIONS = [
@@ -49,6 +50,7 @@ export function PaymentFilters({
   flow?: 'pay' | 'receive';
 }): React.ReactElement {
   const router = useRouter();
+  const { isPending, navigate } = useSoftNavigate();
 
   const base: ScopeQuery & { kind: string | null; payday: boolean; flow: 'pay' | 'receive' } = {
     center: activeCenterId,
@@ -60,12 +62,14 @@ export function PaymentFilters({
     flow,
   };
 
-  function navigate(patch: Partial<typeof base>) {
-    router.push(buildPaymentsHref({ ...base, ...patch }), { scroll: false });
+  function go(patch: Partial<typeof base>): void {
+    navigate(() => {
+      router.push(buildPaymentsHref({ ...base, ...patch }), { scroll: false });
+    });
   }
 
   return (
-    <FilterBar>
+    <FilterBar pending={isPending}>
       <FilterField label="Período">
         <FilterDateRangePicker
           value={{
@@ -74,7 +78,7 @@ export function PaymentFilters({
             to: customTo ?? (range.period === 'custom' ? range.end : undefined),
           }}
           onChange={(next) =>
-            navigate({
+            go({
               period: next.period,
               from: next.from,
               to: next.to,
@@ -88,7 +92,7 @@ export function PaymentFilters({
         <FilterSelect
           ariaLabel="Centro de custo"
           value={activeCenterId ?? 'all'}
-          onValueChange={(value) => navigate({ center: value === 'all' ? null : value })}
+          onValueChange={(value) => go({ center: value === 'all' ? null : value })}
           options={centerFilterOptions(centers)}
         />
       </FilterField>
@@ -97,7 +101,7 @@ export function PaymentFilters({
         <FilterSelect
           ariaLabel="Tipo de obrigação"
           value={activeKind ?? 'all'}
-          onValueChange={(value) => navigate({ kind: value === 'all' ? null : value })}
+          onValueChange={(value) => go({ kind: value === 'all' ? null : value })}
           options={[...KIND_OPTIONS]}
         />
       </FilterField>

@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import {
   formatBrlFromCents,
   formatIsoDateBr,
@@ -24,6 +25,7 @@ import { redirect } from 'next/navigation';
 import { NewPlanSheet } from '@/components/new-plan-sheet';
 import { PageHeader } from '@/components/page-header';
 import { PlanCard, type PlanCardData } from '@/components/plan-card';
+import { CardsPageSkeleton } from '@/components/page-skeletons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getAuthSession, getDb } from '@/server/db';
@@ -35,7 +37,19 @@ const KIND_FILTERS: Array<{ value: string; label: string }> = [
   { value: 'custom', label: 'Outros' },
 ];
 
-export default async function PlanningPage({
+export default function PlanningPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ kind?: string }>;
+}): React.ReactElement {
+  return (
+    <Suspense fallback={<CardsPageSkeleton />}>
+      <PlanningView searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function PlanningView({
   searchParams,
 }: {
   searchParams: Promise<{ kind?: string }>;

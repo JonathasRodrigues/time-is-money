@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import { formatBrlFromCents, formatIsoDateBr, transactionStatusLabel } from '@tim/domain';
 import { accounts, categories, costCenters, transactions } from '@tim/db';
 import { can } from '@tim/auth';
@@ -9,6 +10,7 @@ import { EditTransactionDialog } from '@/components/edit-transaction-dialog';
 import { NewTransactionSheet } from '@/components/new-transaction-sheet';
 import { ExtratoFilters } from '@/components/extrato-filters';
 import { PageHeader } from '@/components/page-header';
+import { TablePageSkeleton } from '@/components/page-skeletons';
 import { resolveCostCenterId, resolveDateRange } from '@/lib/scope-query';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -23,19 +25,33 @@ import { getAuthSession, getDb } from '@/server/db';
 
 const LIST_LIMIT = 500;
 
-export default async function TransactionsPage({
+type SearchParams = {
+  center?: string;
+  period?: string;
+  from?: string;
+  to?: string;
+  type?: string;
+  status?: string;
+  category?: string;
+  q?: string;
+};
+
+export default function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    center?: string;
-    period?: string;
-    from?: string;
-    to?: string;
-    type?: string;
-    status?: string;
-    category?: string;
-    q?: string;
-  }>;
+  searchParams: Promise<SearchParams>;
+}): React.ReactElement {
+  return (
+    <Suspense fallback={<TablePageSkeleton />}>
+      <TransactionsView searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function TransactionsView({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
 }): Promise<React.ReactElement> {
   const session = await getAuthSession();
   if (!session?.householdId) redirect('/onboarding');

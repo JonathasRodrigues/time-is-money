@@ -13,14 +13,10 @@ import {
 import { transactions, userPreferences } from '@tim/db';
 import { ensureSeriesInstancesForMonth } from '@tim/application';
 import { AppShell } from '@/components/app-shell';
+import { shouldUseClerk } from '@/components/auth-shell';
 import { IncomeReceiptBanner } from '@/components/income-receipt-banner';
 import { createAppContext } from '@/server/context';
 import { getAuthSession, getDb } from '@/server/db';
-
-function isClerkConfigured(): boolean {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  return Boolean(key && key.startsWith('pk_') && !key.includes('placeholder'));
-}
 
 function monthBounds(yearMonth: string): { start: string; end: string } {
   const [y, m] = yearMonth.split('-').map(Number);
@@ -37,11 +33,11 @@ export default async function AppLayout({
   children: React.ReactNode;
 }): Promise<React.ReactElement> {
   const demo = isDemoMode();
-  const configured = isClerkConfigured();
+  const useClerk = shouldUseClerk();
   const session = await getAuthSession();
 
   if (!demo) {
-    if (configured && !session) {
+    if (useClerk && !session) {
       redirect('/sign-in');
     }
   } else if (!session?.householdId) {

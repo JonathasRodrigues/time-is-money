@@ -91,6 +91,17 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-ibm-plex), 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --animate-navigation-progress: navigation-progress 1.2s ease-in-out infinite;
+
+  @keyframes navigation-progress {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
 }
 
 @layer base {

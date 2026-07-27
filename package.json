@@ -17,6 +17,7 @@
     "db:studio": "pnpm --filter @tim/db studio",
     "demo:seed": "pnpm --filter @tim/mocks seed",
     "dev:demo": "pnpm demo:seed && DEMO_MODE=1 pnpm --filter @tim/web dev",
+    "dev:clerk": "DEMO_MODE=0 pnpm --filter @tim/web dev",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

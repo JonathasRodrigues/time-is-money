@@ -1,7 +1,6 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useTransition } from 'react';
 import {
   FilterBar,
   FilterDateRangePicker,
@@ -10,6 +9,7 @@ import {
   FilterSelect,
   centerFilterOptions,
 } from '@/components/filters';
+import { useSoftNavigate } from '@/components/navigating';
 import { buildScopeHref, type DateRange, type ScopeQuery } from '@/lib/scope-query';
 
 /** Filtros do Extrato — barra flat + date range picker. */
@@ -37,7 +37,7 @@ export function ExtratoFilters({
   customTo?: string;
 }): React.ReactElement {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { isPending, navigate } = useSoftNavigate();
 
   const categoryOptions = activeType
     ? categories.filter((category) => category.type === activeType)
@@ -54,8 +54,8 @@ export function ExtratoFilters({
     q: activeQuery || null,
   };
 
-  function navigate(patch: Partial<ScopeQuery>) {
-    startTransition(() => {
+  function go(patch: Partial<ScopeQuery>): void {
+    navigate(() => {
       const next: ScopeQuery = { ...base, ...patch };
       if (patch.type !== undefined && patch.type !== activeType) {
         const stillValid =
@@ -71,7 +71,7 @@ export function ExtratoFilters({
   }
 
   return (
-    <FilterBar>
+    <FilterBar pending={isPending}>
       <FilterField label="Período">
         <FilterDateRangePicker
           value={{
@@ -80,7 +80,7 @@ export function ExtratoFilters({
             to: customTo ?? (range.period === 'custom' ? range.end : undefined),
           }}
           onChange={(next) =>
-            navigate({
+            go({
               period: next.period,
               from: next.from,
               to: next.to,
@@ -94,7 +94,7 @@ export function ExtratoFilters({
         <FilterSelect
           ariaLabel="Centro de custo"
           value={activeCenterId ?? 'all'}
-          onValueChange={(value) => navigate({ center: value === 'all' ? null : value })}
+          onValueChange={(value) => go({ center: value === 'all' ? null : value })}
           options={centerFilterOptions(centers)}
         />
       </FilterField>
@@ -104,7 +104,7 @@ export function ExtratoFilters({
           ariaLabel="Tipo"
           value={activeType ?? 'all'}
           onValueChange={(value) =>
-            navigate({
+            go({
               type: value === 'all' ? null : (value as 'income' | 'expense'),
             })
           }
@@ -121,7 +121,7 @@ export function ExtratoFilters({
           ariaLabel="Status"
           value={activeStatus ?? 'all'}
           onValueChange={(value) =>
-            navigate({
+            go({
               status: value === 'all' ? null : (value as 'pending' | 'paid'),
             })
           }
@@ -149,7 +149,7 @@ export function ExtratoFilters({
         <FilterSelect
           ariaLabel="Categoria"
           value={activeCategoryId ?? 'all'}
-          onValueChange={(value) => navigate({ category: value === 'all' ? null : value })}
+          onValueChange={(value) => go({ category: value === 'all' ? null : value })}
           triggerClassName="min-w-[12rem]"
           options={[
             { value: 'all', label: 'Todas' },
@@ -168,15 +168,9 @@ export function ExtratoFilters({
           value={activeQuery}
           placeholder="Descrição…"
           ariaLabel="Buscar no extrato"
-          onSubmit={(q) => navigate({ q: q || null })}
+          onSubmit={(q) => go({ q: q || null })}
         />
       </FilterField>
-
-      {pending ? (
-        <span className="sr-only" aria-live="polite">
-          Atualizando filtros
-        </span>
-      ) : null}
     </FilterBar>
   );
 }

@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import {
   ACCOUNT_KIND_LABEL,
   estimateMonthlyYieldCents,
@@ -16,6 +17,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { PageHeader, nativeSelectClassName } from '@/components/page-header';
 import { ActionForm } from '@/components/action-form';
+import { CardsPageSkeleton } from '@/components/page-skeletons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +41,15 @@ function accountOptionLabel(row: { name: string; kind: string; balanceCents: num
   return `${row.name} (${kind}) · ${formatBrlFromCents(row.balanceCents)}`;
 }
 
-export default async function WealthPage(): Promise<React.ReactElement> {
+export default function WealthPage(): React.ReactElement {
+  return (
+    <Suspense fallback={<CardsPageSkeleton />}>
+      <WealthView />
+    </Suspense>
+  );
+}
+
+async function WealthView(): Promise<React.ReactElement> {
   const session = await getAuthSession();
   if (!session?.householdId) redirect('/onboarding');
   const db = getDb();

@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import {
   estimatePayableCents,
   formatBrlFromCents,
@@ -23,6 +24,7 @@ import { NewPayableSheet } from '@/components/new-payable-sheet';
 import { NewReceivableSheet } from '@/components/new-receivable-sheet';
 import { PaymentFilters } from '@/components/payment-filters';
 import { PaymentsTable } from '@/components/payments-table';
+import { TablePageSkeleton } from '@/components/page-skeletons';
 import { cn } from '@/lib/utils';
 import {
   resolveCostCenterId,
@@ -61,19 +63,33 @@ function buildFlowHref(
   return query ? `/payments?${query}` : '/payments';
 }
 
-export default async function PaymentsPage({
+type SearchParams = {
+  center?: string;
+  kind?: string;
+  month?: string;
+  period?: string;
+  from?: string;
+  to?: string;
+  payday?: string;
+  flow?: string;
+};
+
+export default function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    center?: string;
-    kind?: string;
-    month?: string;
-    period?: string;
-    from?: string;
-    to?: string;
-    payday?: string;
-    flow?: string;
-  }>;
+  searchParams: Promise<SearchParams>;
+}): React.ReactElement {
+  return (
+    <Suspense fallback={<TablePageSkeleton />}>
+      <PaymentsView searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function PaymentsView({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
 }): Promise<React.ReactElement> {
   const session = await getAuthSession();
   if (!session?.householdId) redirect('/onboarding');

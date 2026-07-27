@@ -59,7 +59,7 @@ Copie `/home/flaesh/time-is-money/.env.example` para `apps/web/.env.local`:
 
 ## Demo local (sem Clerk)
 
-Com Postgres local (Docker) e dados mock:
+Com `DEMO_MODE=1` o Clerk é **ignorado** mesmo se houver chaves no `.env`. Sessão e dados vêm do mock (`@tim/mocks`).
 
 ```bash
 # sobe Postgres se ainda não estiver
@@ -68,16 +68,19 @@ docker start tim-postgres || docker run -d --name tim-postgres \
   -p 5432:5432 postgres:16-alpine
 
 pnpm db:migrate
-pnpm demo:seed          # package @tim/mocks
-DEMO_MODE=1 pnpm dev    # ou: pnpm dev:demo
+pnpm dev:demo           # seed + DEMO_MODE=1 + next dev
+# ou, se o seed já rodou e DEMO_MODE=1 está no .env.local:
+pnpm dev
 ```
 
-Abra `http://localhost:3000` — redireciona ao dashboard com badge **Demo local**.
+Abra `http://localhost:3000/dashboard` — badge **Demo local**.
+
+Para testar Clerk de verdade: `pnpm dev:clerk` (exige chaves válidas e `DEMO_MODE=0`).
 
 O package `@tim/mocks` cria household, PF + Empresa X, contas, lançamentos e financiamento de exemplo.
 
 ```bash
-pnpm dev          # desenvolvimento
+pnpm dev          # desenvolvimento (respeita DEMO_MODE do .env)
 pnpm build        # build produção
 pnpm lint         # lint
 pnpm typecheck    # tipos

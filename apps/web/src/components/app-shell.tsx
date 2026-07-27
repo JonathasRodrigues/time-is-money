@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   ArrowLeftRight,
@@ -17,6 +18,9 @@ import {
   Wallet,
 } from 'lucide-react';
 import { JarvisDock } from '@/components/jarvis-dock';
+import { NavigatingContent } from '@/components/navigating-content';
+import { NavigatingProvider } from '@/components/navigating';
+import { NavigationProgress } from '@/components/navigation-progress';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -126,6 +130,68 @@ export function AppShell({
 
   return (
     <SidebarProvider>
+      <Suspense fallback={<AppShellFallback pathname={pathname}>{children}</AppShellFallback>}>
+        <NavigatingProvider>
+          <AppShellFrame
+            demo={demo}
+            userEmail={userEmail}
+            userLabel={userLabel}
+            ttsEnabled={ttsEnabled}
+            canManageMembers={canManageMembers}
+            pathname={pathname}
+            systemNav={systemNav}
+            initials={initials}
+          >
+            {children}
+          </AppShellFrame>
+        </NavigatingProvider>
+      </Suspense>
+    </SidebarProvider>
+  );
+}
+
+function AppShellFallback({
+  children,
+  pathname,
+}: {
+  children: React.ReactNode;
+  pathname: string;
+}): React.ReactElement {
+  return (
+    <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
+      <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{titleFromPath(pathname)}</p>
+        </div>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 md:px-8">{children}</div>
+    </SidebarInset>
+  );
+}
+
+function AppShellFrame({
+  children,
+  demo,
+  userEmail,
+  userLabel,
+  ttsEnabled,
+  canManageMembers,
+  pathname,
+  systemNav,
+  initials,
+}: {
+  children: React.ReactNode;
+  demo: boolean;
+  userEmail: string;
+  userLabel: string;
+  ttsEnabled: boolean;
+  canManageMembers: boolean;
+  pathname: string;
+  systemNav: SystemNavItem[];
+  initials: string;
+}): React.ReactElement {
+  return (
+    <>
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader className="gap-3 px-3 py-4">
           <div className="flex items-center gap-3 overflow-hidden px-1">
@@ -263,7 +329,8 @@ export function AppShell({
       </Sidebar>
 
       <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
+        <header className="relative sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
+          <NavigationProgress />
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-5" />
           <div className="min-w-0 flex-1">
@@ -272,11 +339,11 @@ export function AppShell({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 md:px-8">
-          {children}
+          <NavigatingContent>{children}</NavigatingContent>
         </div>
       </SidebarInset>
 
       <JarvisDock ttsEnabled={ttsEnabled} />
-    </SidebarProvider>
+    </>
   );
 }

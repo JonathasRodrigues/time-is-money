@@ -4,9 +4,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
+function isDemoModeEnv(): boolean {
+  return process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
+}
+
+/** Chaves Clerk presentes (podem existir mesmo em demo). */
 export function isClerkConfigured(): boolean {
   const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   return Boolean(key && key.startsWith('pk_') && !key.includes('placeholder'));
+}
+
+/**
+ * Se o app deve montar Clerk (Provider, SignIn, middleware protect).
+ * Em DEMO_MODE o mock manda — ignora chaves Clerk quebradas/ausentes.
+ */
+export function shouldUseClerk(): boolean {
+  if (isDemoModeEnv()) return false;
+  return isClerkConfigured();
 }
 
 export function AuthShell({
@@ -86,8 +100,8 @@ export function DemoAuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }): React.R
       />
 
       <div className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        Demo local ativa · Clerk não configurado. Os campos abaixo são só visual — use o botão para
-        abrir o app.
+        Demo local ativa · Clerk desligado. Os campos abaixo são só visual — use o botão para abrir
+        o app.
       </div>
 
       <div className="space-y-4">

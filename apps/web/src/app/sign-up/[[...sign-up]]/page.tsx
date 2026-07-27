@@ -5,7 +5,7 @@ import {
   AuthFooterNote,
   AuthShell,
   DemoAuthForm,
-  isClerkConfigured,
+  shouldUseClerk,
 } from '@/components/auth-shell';
 
 export default async function SignUpPage({
@@ -17,7 +17,7 @@ export default async function SignUpPage({
   const redirectUrl =
     params.redirect_url && params.redirect_url.startsWith('/') ? params.redirect_url : undefined;
 
-  if (!isClerkConfigured()) {
+  if (!shouldUseClerk()) {
     return (
       <AuthShell eyebrow="Cadastro">
         <DemoAuthForm mode="sign-up" />

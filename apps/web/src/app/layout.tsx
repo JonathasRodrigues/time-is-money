@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Analytics } from '@vercel/analytics/next';
-import { ClerkProvider } from '@clerk/nextjs';
-import { shadcn } from '@clerk/ui/themes';
 import { IBM_Plex_Sans } from 'next/font/google';
+import { shouldUseClerk } from '@/components/auth-shell';
 import { RegisterServiceWorker } from '@/components/register-sw';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -38,17 +37,12 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-function isClerkConfigured(): boolean {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  return Boolean(key && key.startsWith('pk_') && !key.includes('placeholder'));
-}
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
-}>): React.ReactElement {
-  const configured = isClerkConfigured();
+}>): Promise<React.ReactElement> {
+  const useClerk = shouldUseClerk();
   const content = (
     <TooltipProvider>
       <RegisterServiceWorker />
@@ -58,14 +52,21 @@ export default function RootLayout({
     </TooltipProvider>
   );
 
+  if (!useClerk) {
+    return (
+      <html lang="pt-BR">
+        <body className={`${sans.variable} font-sans antialiased`}>{content}</body>
+      </html>
+    );
+  }
+
+  const { ClerkProvider } = await import('@clerk/nextjs');
+  const { shadcn } = await import('@clerk/ui/themes');
+
   return (
     <html lang="pt-BR">
       <body className={`${sans.variable} font-sans antialiased`}>
-        {configured ? (
-          <ClerkProvider appearance={{ theme: shadcn }}>{content}</ClerkProvider>
-        ) : (
-          content
-        )}
+        <ClerkProvider appearance={{ theme: shadcn }}>{content}</ClerkProvider>
       </body>
     </html>
   );

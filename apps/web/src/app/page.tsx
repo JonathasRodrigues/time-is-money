@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { isDemoMode } from '@tim/mocks';
 import { Button } from '@/components/ui/button';
-import { isClerkConfigured } from '@/components/auth-shell';
+import { shouldUseClerk } from '@/components/auth-shell';
 
 export default async function HomePage(): Promise<React.ReactElement> {
   const demo = isDemoMode();
-  const configured = isClerkConfigured();
-  const clerk = configured ? await import('@clerk/nextjs') : null;
+  const useClerk = shouldUseClerk();
+  const clerk = useClerk ? await import('@clerk/nextjs') : null;
 
   return (
     <main className="min-h-screen">

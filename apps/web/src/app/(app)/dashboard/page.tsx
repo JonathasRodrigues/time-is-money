@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import {
   analyzeCategoryAttention,
   estimateMonthlyYieldCents,
@@ -30,6 +31,7 @@ import {
   shiftMonth,
 } from '@/lib/scope-query';
 import { PageHeader } from '@/components/page-header';
+import { DashboardPageSkeleton } from '@/components/page-skeletons';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -61,10 +63,24 @@ function deltaLabel(current: number, previous: number): string {
   return `${sign}${pct.toFixed(1)}% vs período anterior`;
 }
 
-export default async function DashboardPage({
+type SearchParams = { center?: string; period?: string; from?: string; to?: string };
+
+export default function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ center?: string; period?: string; from?: string; to?: string }>;
+  searchParams: Promise<SearchParams>;
+}): React.ReactElement {
+  return (
+    <Suspense fallback={<DashboardPageSkeleton />}>
+      <DashboardView searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function DashboardView({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
 }): Promise<React.ReactElement> {
   const session = await getAuthSession();
   if (!session?.householdId) redirect('/onboarding');

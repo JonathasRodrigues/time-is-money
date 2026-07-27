@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import { formatBrlFromCents, type AmortizationSystem, type FinancingCategory } from '@tim/domain';
 import { accounts, categories, costCenters, financings, installments } from '@tim/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -8,10 +9,23 @@ import { CostCenterFilter } from '@/components/cost-center-filter';
 import { FinancingContractCard } from '@/components/financing-contract-card';
 import { NewFinancingSheet } from '@/components/new-financing-sheet';
 import { PageHeader } from '@/components/page-header';
+import { CardsPageSkeleton } from '@/components/page-skeletons';
 import { resolveCostCenterId } from '@/lib/scope-query';
 import { getAuthSession, getDb } from '@/server/db';
 
-export default async function FinancingsPage({
+export default function FinancingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ center?: string }>;
+}): React.ReactElement {
+  return (
+    <Suspense fallback={<CardsPageSkeleton />}>
+      <FinancingsView searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function FinancingsView({
   searchParams,
 }: {
   searchParams: Promise<{ center?: string }>;

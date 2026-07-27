@@ -5,7 +5,7 @@ import {
   AuthFooterNote,
   AuthShell,
   DemoAuthForm,
-  isClerkConfigured,
+  shouldUseClerk,
 } from '@/components/auth-shell';
 
 export default async function SignInPage({
@@ -17,7 +17,7 @@ export default async function SignInPage({
   const redirectUrl =
     params.redirect_url && params.redirect_url.startsWith('/') ? params.redirect_url : undefined;
 
-  if (!isClerkConfigured()) {
+  if (!shouldUseClerk()) {
     return (
       <AuthShell eyebrow="Entrar">
         <DemoAuthForm mode="sign-in" />

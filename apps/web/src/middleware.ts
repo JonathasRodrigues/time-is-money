@@ -10,8 +10,13 @@ function isClerkConfigured(): boolean {
   return Boolean(key && key.startsWith('pk_') && !key.includes('placeholder'));
 }
 
+function shouldUseClerk(): boolean {
+  if (isDemoMode()) return false;
+  return isClerkConfigured();
+}
+
 export default async function middleware(req: NextRequest) {
-  if (isDemoMode() || !isClerkConfigured()) {
+  if (!shouldUseClerk()) {
     return NextResponse.next();
   }
 

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import { peekHouseholdInvite } from '@tim/application';
 import { MEMBER_ROLE_LABEL } from '@tim/domain';
-import { AuthCardHeader, AuthShell, isClerkConfigured } from '@/components/auth-shell';
+import { AuthCardHeader, AuthShell, shouldUseClerk } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { AcceptInviteForm } from '@/components/accept-invite-form';
 import { getAuthSession, getDb } from '@/server/db';
@@ -93,7 +93,7 @@ export default async function InvitePage({
           <Button asChild>
             <Link href={signInHref}>Entrar e aceitar</Link>
           </Button>
-          {isClerkConfigured() ? (
+          {shouldUseClerk() ? (
             <Button asChild variant="outline">
               <Link href={signUpHref}>Criar conta</Link>
             </Button>
