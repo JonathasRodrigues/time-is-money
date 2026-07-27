@@ -77,6 +77,31 @@ export const updatePendingAmountSchema = z.object({
   amountCents: moneyCentsSchema.nullable(),
 });
 
+/** Edição de lançamento no extrato (data, valor, classificação, status). */
+export const updateTransactionSchema = z
+  .object({
+    householdId: z.string().uuid(),
+    transactionId: z.string().uuid(),
+    costCenterId: z.string().uuid(),
+    categoryId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    type: transactionTypeSchema,
+    status: transactionStatusSchema,
+    amountCents: optionalMoneyCentsSchema,
+    /** Data principal: pagamento/recebimento se pago; vencimento se pendente. */
+    date: isoDateSchema,
+    description: z.string().max(500).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.status === 'paid' && (data.amountCents == null || data.amountCents <= 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Informe o valor do lançamento pago',
+        path: ['amountCents'],
+      });
+    }
+  });
+
 export const payTransactionSchema = z.object({
   householdId: z.string().uuid(),
   transactionId: z.string().uuid(),
@@ -272,6 +297,11 @@ export const softDeleteFinancingSchema = z.object({
   financingId: z.string().uuid(),
 });
 
+export const softDeleteTransactionSchema = z.object({
+  householdId: z.string().uuid(),
+  transactionId: z.string().uuid(),
+});
+
 export const notificationPrefsSchema = z.object({
   emailDueReminders: z.boolean(),
   windowsDays: z.array(z.number().int().min(0).max(30)).min(1).max(5),
@@ -340,6 +370,7 @@ export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 export type CreatePendingTransactionInput = z.infer<typeof createPendingTransactionSchema>;
 export type CreateMonthlySeriesInput = z.infer<typeof createMonthlySeriesSchema>;
 export type UpdatePendingAmountInput = z.infer<typeof updatePendingAmountSchema>;
+export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 export type PayTransactionInput = z.infer<typeof payTransactionSchema>;
 export type PayTransactionsBulkInput = z.infer<typeof payTransactionsBulkSchema>;
 export type CreateCostCenterInput = z.infer<typeof createCostCenterSchema>;
@@ -355,6 +386,7 @@ export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>;
 export type PayInstallmentsBulkInput = z.infer<typeof payInstallmentsBulkSchema>;
 export type RebuildFinancingInput = z.infer<typeof rebuildFinancingSchema>;
 export type SoftDeleteFinancingInput = z.infer<typeof softDeleteFinancingSchema>;
+export type SoftDeleteTransactionInput = z.infer<typeof softDeleteTransactionSchema>;
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
 export type ImportPreviewRowUpdate = z.infer<typeof importPreviewRowUpdateSchema>;

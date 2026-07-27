@@ -2,8 +2,10 @@ export const dynamic = 'force-dynamic';
 
 import { formatBrlFromCents, formatIsoDateBr, transactionStatusLabel } from '@tim/domain';
 import { accounts, categories, costCenters, transactions } from '@tim/db';
+import { can } from '@tim/auth';
 import { and, asc, count, desc, eq, gte, ilike, isNull, lte, sql, sum } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
+import { EditTransactionDialog } from '@/components/edit-transaction-dialog';
 import { NewTransactionSheet } from '@/components/new-transaction-sheet';
 import { ExtratoFilters } from '@/components/extrato-filters';
 import { PageHeader } from '@/components/page-header';
@@ -40,6 +42,7 @@ export default async function TransactionsPage({
   const db = getDb();
   const params = await searchParams;
   const range = resolveDateRange(params);
+  const canEdit = can(session, 'transactions.write');
 
   const typeFilter = params.type === 'income' || params.type === 'expense' ? params.type : null;
   const statusFilter =
@@ -106,22 +109,28 @@ export default async function TransactionsPage({
   const centerMap = new Map(centers.map((c) => [c.id, c.name]));
   const scopeLabel = [range.label, activeCenterName].filter(Boolean).join(' · ');
 
+  const centerOptions = centers.map((c) => ({ id: c.id, name: c.name }));
+  const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name, type: c.type }));
+  const accountOptions = (filteredAccounts.length > 0 ? filteredAccounts : accs).map((a) => ({
+    id: a.id,
+    name: a.name,
+  }));
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Extrato"
         description={`${totalCount} movimento${totalCount === 1 ? '' : 's'} · ${scopeLabel}`}
         actions={
-          <NewTransactionSheet
-            centers={centers.map((c) => ({ id: c.id, name: c.name }))}
-            categories={cats.map((c) => ({ id: c.id, name: c.name, type: c.type }))}
-            accounts={(filteredAccounts.length > 0 ? filteredAccounts : accs).map((a) => ({
-              id: a.id,
-              name: a.name,
-            }))}
-            defaultCostCenterId={centerId ?? centers[0]?.id}
-            defaultOccurredOn={range.end}
-          />
+          canEdit ? (
+            <NewTransactionSheet
+              centers={centerOptions}
+              categories={categoryOptions}
+              accounts={accountOptions}
+              defaultCostCenterId={centerId ?? centers[0]?.id}
+              defaultOccurredOn={range.end}
+            />
+          ) : null
         }
       />
 
@@ -180,13 +189,17 @@ export default async function TransactionsPage({
                 <TableHead>Status</TableHead>
                 <TableHead>Centro</TableHead>
                 <TableHead>Categoria</TableHead>
-                <TableHead className="pr-4 text-right sm:pr-5">Valor</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+                {canEdit ? <TableHead className="pr-4 text-right sm:pr-5"> </TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={canEdit ? 8 : 7}
+                    className="h-28 text-center text-muted-foreground"
+                  >
                     Nenhum movimento neste filtro. Use <span className="font-medium">Novo</span>{' '}
                     para registrar.
                   </TableCell>
@@ -225,9 +238,9 @@ export default async function TransactionsPage({
                       <TableCell>{centerMap.get(row.costCenterId) ?? '—'}</TableCell>
                       <TableCell>{catMap.get(row.categoryId) ?? '—'}</TableCell>
                       <TableCell
-                        className={`pr-4 text-right font-medium tabular-nums sm:pr-5 ${
+                        className={`text-right font-medium tabular-nums ${
                           row.type === 'income' ? 'text-primary' : ''
-                        }`}
+                        } ${canEdit ? '' : 'pr-4 sm:pr-5'}`}
                       >
                         {row.amountCents == null ? (
                           <span className="text-muted-foreground">—</span>
@@ -238,6 +251,29 @@ export default async function TransactionsPage({
                           </>
                         )}
                       </TableCell>
+                      {canEdit ? (
+                        <TableCell className="pr-2 text-right sm:pr-3">
+                          <EditTransactionDialog
+                            transaction={{
+                              id: row.id,
+                              type: row.type,
+                              status: row.status,
+                              amountCents: row.amountCents,
+                              occurredOn: row.occurredOn,
+                              dueOn: row.dueOn,
+                              paidOn: row.paidOn,
+                              description: row.description,
+                              costCenterId: row.costCenterId,
+                              categoryId: row.categoryId,
+                              accountId: row.accountId,
+                              installmentId: row.installmentId,
+                            }}
+                            centers={centerOptions}
+                            categories={categoryOptions}
+                            accounts={accs.map((a) => ({ id: a.id, name: a.name }))}
+                          />
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   );
                 })

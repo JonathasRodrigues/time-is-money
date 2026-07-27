@@ -7,11 +7,13 @@ import {
   payInstallmentsBulk,
   rebuildFinancing,
   softDeleteFinancing,
+  softDeleteTransaction,
   createPendingTransaction,
   createMonthlySeries,
   payTransaction,
   payTransactionsBulk,
   updatePendingAmount,
+  updateTransaction,
   ensureSeriesInstancesForMonth,
   createTransfer,
 } from '@tim/application';
@@ -43,6 +45,7 @@ import {
   updateAccountSchema,
   updateInstitutionSchema,
   updatePendingAmountSchema,
+  updateTransactionSchema,
 } from '@tim/validators';
 import { requireCapability, requireSession } from '@tim/auth';
 import { auth, currentUser } from '@clerk/nextjs/server';
@@ -488,6 +491,36 @@ export async function updatePendingAmountAction(formData: FormData) {
     amountCents: amountRaw === '' ? null : Math.round(Number(amountRaw) * 100),
   });
   await updatePendingAmount(ctx, parsed);
+  revalidateApp();
+}
+
+export async function updateTransactionAction(formData: FormData) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const amountRaw = String(formData.get('amount') || '');
+  const parsed = updateTransactionSchema.parse({
+    householdId: session.householdId,
+    transactionId: String(formData.get('transactionId')),
+    costCenterId: String(formData.get('costCenterId')),
+    categoryId: String(formData.get('categoryId')),
+    accountId: String(formData.get('accountId')),
+    type: String(formData.get('type')),
+    status: String(formData.get('status')),
+    amountCents: amountRaw === '' ? null : Math.round(Number(amountRaw.replace(',', '.')) * 100),
+    date: String(formData.get('date')),
+    description: String(formData.get('description') || '') || undefined,
+  });
+  await updateTransaction(ctx, parsed);
+  revalidateApp();
+}
+
+export async function deleteTransactionAction(formData: FormData) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  await softDeleteTransaction(ctx, {
+    householdId: session.householdId,
+    transactionId: String(formData.get('transactionId')),
+  });
   revalidateApp();
 }
 

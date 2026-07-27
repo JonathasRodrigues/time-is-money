@@ -7,6 +7,7 @@ import {
   accounts,
   auditLogs,
   categories,
+  costCenters,
   financings,
   installments,
   transactionSeries,
@@ -34,7 +35,9 @@ import type {
   PayTransactionsBulkInput,
   RebuildFinancingInput,
   SoftDeleteFinancingInput,
+  SoftDeleteTransactionInput,
   UpdatePendingAmountInput,
+  UpdateTransactionInput,
 } from '@tim/validators';
 import {
   createFinancingSchema,
@@ -48,7 +51,9 @@ import {
   payTransactionsBulkSchema,
   rebuildFinancingSchema,
   softDeleteFinancingSchema,
+  softDeleteTransactionSchema,
   updatePendingAmountSchema,
+  updateTransactionSchema,
 } from '@tim/validators';
 import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
@@ -462,6 +467,178 @@ export async function updatePendingAmount(ctx: AppContext, raw: UpdatePendingAmo
   });
 
   return row;
+}
+
+export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'transactions.write');
+  const input = updateTransactionSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [tx] = await ctx.db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.id, input.transactionId),
+        eq(transactions.householdId, session.householdId),
+        isNull(transactions.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!tx) {
+    throw new Error('Lançamento não encontrado');
+  }
+
+  const [category] = await ctx.db
+    .select({ id: categories.id, type: categories.type })
+    .from(categories)
+    .where(
+      and(eq(categories.id, input.categoryId), eq(categories.householdId, session.householdId)),
+    )
+    .limit(1);
+
+  if (!category) {
+    throw new Error('Categoria inválida');
+  }
+  if (category.type !== input.type) {
+    throw new Error('Categoria não combina com o tipo do lançamento');
+  }
+
+  const [center] = await ctx.db
+    .select({ id: costCenters.id })
+    .from(costCenters)
+    .where(
+      and(eq(costCenters.id, input.costCenterId), eq(costCenters.householdId, session.householdId)),
+    )
+    .limit(1);
+  if (!center) {
+    throw new Error('Centro de custo inválido');
+  }
+
+  const [account] = await ctx.db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)))
+    .limit(1);
+  if (!account) {
+    throw new Error('Conta inválida');
+  }
+
+  const isPaid = input.status === 'paid';
+  const amountCents = input.amountCents ?? null;
+  const dueOn = isPaid ? (tx.dueOn ?? input.date) : input.date;
+  const paidOn = isPaid ? input.date : null;
+  const occurredOn = input.date;
+
+  const [row] = await ctx.db
+    .update(transactions)
+    .set({
+      costCenterId: input.costCenterId,
+      categoryId: input.categoryId,
+      accountId: input.accountId,
+      type: input.type,
+      status: input.status,
+      amountCents,
+      occurredOn,
+      dueOn,
+      paidOn,
+      description: input.description || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(transactions.id, tx.id))
+    .returning();
+
+  if (tx.installmentId) {
+    await ctx.db
+      .update(installments)
+      .set({
+        status: isPaid ? 'paid' : 'pending',
+        paidOn,
+        ...(amountCents != null ? { amountCents } : {}),
+        transactionId: isPaid ? tx.id : null,
+      })
+      .where(
+        and(
+          eq(installments.id, tx.installmentId),
+          eq(installments.householdId, session.householdId),
+        ),
+      );
+  }
+
+  await writeAudit(ctx, {
+    action: 'update',
+    resourceType: 'transaction',
+    resourceId: tx.id,
+    metadata: {
+      type: input.type,
+      status: input.status,
+      amountCents,
+      date: input.date,
+    },
+  });
+
+  return row;
+}
+
+export async function softDeleteTransaction(ctx: AppContext, raw: SoftDeleteTransactionInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'transactions.write');
+  const input = softDeleteTransactionSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [tx] = await ctx.db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.id, input.transactionId),
+        eq(transactions.householdId, session.householdId),
+        isNull(transactions.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!tx) {
+    throw new Error('Lançamento não encontrado');
+  }
+
+  await ctx.db
+    .update(transactions)
+    .set({
+      deletedAt: new Date(),
+      installmentId: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(transactions.id, tx.id));
+
+  if (tx.installmentId) {
+    await ctx.db
+      .update(installments)
+      .set({
+        status: 'pending',
+        paidOn: null,
+        transactionId: null,
+      })
+      .where(
+        and(
+          eq(installments.id, tx.installmentId),
+          eq(installments.householdId, session.householdId),
+        ),
+      );
+  }
+
+  await writeAudit(ctx, {
+    action: 'delete',
+    resourceType: 'transaction',
+    resourceId: tx.id,
+    metadata: { installmentId: tx.installmentId },
+  });
 }
 
 export async function payTransaction(ctx: AppContext, raw: PayTransactionInput) {
