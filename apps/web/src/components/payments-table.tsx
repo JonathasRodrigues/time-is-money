@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import {
   formatBrlFromCents,
   formatCentsForBrInput,
@@ -13,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
-import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
   TableBody,
@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { runWithToast, withActionToast } from '@/lib/action-toast';
+import { useBusyAction } from '@/hooks/use-busy-action';
+import { runWithToast } from '@/lib/action-toast';
+import { busySurfaceClassName } from '@/lib/busy-ui';
 import {
   payTransactionAction,
   payTransactionsBulkAction,
@@ -40,6 +42,8 @@ export interface PayableRow {
   suggestedCents: number | null;
   estimatedCents: number;
 }
+
+type BusyKey = 'bulk' | `pay:${string}` | `save:${string}`;
 
 function payAmountCents(row: PayableRow): number | null {
   if (row.amountCents != null && row.amountCents > 0) return row.amountCents;
@@ -68,7 +72,8 @@ export function PaymentsTable({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [paidOns, setPaidOns] = useState<Record<string, string>>({});
   const [applyAllDate, setApplyAllDate] = useState('');
-  const [pending, startTransition] = useTransition();
+  const { busy, busyKey, isBusy, run } = useBusyAction<BusyKey>();
+
   const isReceive = mode === 'receive';
   const actionVerb = isReceive ? 'Receber' : 'Pagar';
   const actionGerund = isReceive ? 'Recebendo' : 'Pagando';
@@ -103,11 +108,11 @@ export function PaymentsTable({
   const allSelectableChecked =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
-  function toggleAll(checked: boolean) {
+  function toggleAll(checked: boolean): void {
     setSelected(checked ? new Set(selectableIds) : new Set());
   }
 
-  function toggleOne(id: string, checked: boolean) {
+  function toggleOne(id: string, checked: boolean): void {
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(id);
@@ -116,7 +121,7 @@ export function PaymentsTable({
     });
   }
 
-  function applyDateToSelected() {
+  function applyDateToSelected(): void {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(applyAllDate)) return;
     setPaidOns((prev) => {
       const next = { ...prev };
@@ -127,7 +132,7 @@ export function PaymentsTable({
     });
   }
 
-  function paySelected() {
+  function paySelected(): void {
     const items = selectedRows
       .map((row) => {
         const amountCents = payAmountCents(row);
@@ -143,13 +148,46 @@ export function PaymentsTable({
 
     if (items.length === 0) return;
 
-    startTransition(async () => {
+    void run('bulk', async () => {
       try {
         await runWithToast(() => payTransactionsBulkAction({ items }), {
           loading: `${actionGerund} ${items.length}…`,
           success: bulkSuccess(items.length),
         });
         setSelected(new Set());
+      } catch {
+        // toast já exibido
+      }
+    });
+  }
+
+  function saveRow(rowId: string, form: HTMLFormElement): void {
+    const formData = new FormData(form);
+    void run(`save:${rowId}`, async () => {
+      try {
+        await runWithToast(() => updatePendingAmountAction(formData), {
+          loading: 'Salvando valor…',
+          success: 'Valor atualizado',
+        });
+      } catch {
+        // toast já exibido
+      }
+    });
+  }
+
+  function payRow(rowId: string, form: HTMLFormElement): void {
+    const formData = new FormData(form);
+    void run(`pay:${rowId}`, async () => {
+      try {
+        await runWithToast(() => payTransactionAction(formData), {
+          loading: isReceive ? 'Registrando recebimento…' : 'Registrando pagamento…',
+          success: actionPast,
+        });
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.delete(rowId);
+          return next;
+        });
       } catch {
         // toast já exibido
       }
@@ -185,12 +223,13 @@ export function PaymentsTable({
                   }
                   onValueChange={setApplyAllDate}
                   className="h-8 w-[9.5rem]"
+                  disabled={busy}
                 />
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={pending}
+                  disabled={busy}
                   onClick={applyDateToSelected}
                 >
                   Aplicar
@@ -201,13 +240,20 @@ export function PaymentsTable({
               type="button"
               size="sm"
               variant="outline"
-              disabled={pending}
+              disabled={busy}
               onClick={() => setSelected(new Set())}
             >
               Limpar
             </Button>
-            <Button type="button" size="sm" disabled={pending} onClick={paySelected}>
-              {pending ? `${actionGerund}…` : `${actionVerb} ${selected.size}`}
+            <Button type="button" size="sm" disabled={busy} onClick={paySelected}>
+              {busyKey === 'bulk' ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  {actionGerund}…
+                </>
+              ) : (
+                `${actionVerb} ${selected.size}`
+              )}
             </Button>
           </div>
         </div>
@@ -222,7 +268,7 @@ export function PaymentsTable({
                 className="size-4 rounded border border-input accent-primary"
                 aria-label="Selecionar todas"
                 checked={allSelectableChecked}
-                disabled={selectableIds.length === 0}
+                disabled={selectableIds.length === 0 || busy}
                 onChange={(event) => toggleAll(event.target.checked)}
               />
             </TableHead>
@@ -246,15 +292,24 @@ export function PaymentsTable({
               const overdue = (row.dueOn ?? '') < today;
               const canSelect = payAmountCents(row) != null;
               const rowPaidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
+              const payingThis = isBusy(`pay:${row.id}`);
+              const saving = isBusy(`save:${row.id}`);
+              const active = payingThis || saving || (busyKey === 'bulk' && selected.has(row.id));
+
               return (
-                <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
+                <TableRow
+                  key={row.id}
+                  data-state={selected.has(row.id) ? 'selected' : undefined}
+                  aria-busy={active || undefined}
+                  className={busySurfaceClassName({ busy, active })}
+                >
                   <TableCell>
                     <input
                       type="checkbox"
                       className="size-4 rounded border border-input accent-primary"
                       aria-label={`Selecionar ${row.description ?? 'conta'}`}
                       checked={selected.has(row.id)}
-                      disabled={!canSelect}
+                      disabled={!canSelect || busy}
                       title={canSelect ? undefined : 'Defina um valor antes de selecionar'}
                       onChange={(event) => toggleOne(row.id, event.target.checked)}
                     />
@@ -290,7 +345,10 @@ export function PaymentsTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <form className="flex flex-wrap items-end justify-end gap-1.5">
+                    <form
+                      className="flex flex-wrap items-end justify-end gap-1.5"
+                      onSubmit={(event) => event.preventDefault()}
+                    >
                       <input type="hidden" name="transactionId" value={row.id} />
                       <div className="grid gap-0.5">
                         <span className="text-[10px] text-muted-foreground">{dateLabel}</span>
@@ -305,6 +363,7 @@ export function PaymentsTable({
                           }}
                           className="h-8 w-[9.5rem]"
                           required
+                          disabled={busy}
                         />
                       </div>
                       <div className="grid gap-0.5">
@@ -315,31 +374,46 @@ export function PaymentsTable({
                           placeholder="Valor"
                           defaultValue={amountInputDefault(row)}
                           className="h-8 w-28"
+                          disabled={busy}
                         />
                       </div>
-                      <SubmitButton
+                      <Button
+                        type="button"
                         size="sm"
                         variant="outline"
-                        pendingLabel="…"
-                        formAction={withActionToast(updatePendingAmountAction, {
-                          loading: 'Salvando valor…',
-                          success: 'Valor atualizado',
-                        })}
+                        disabled={busy}
+                        onClick={(event) => {
+                          const form = event.currentTarget.form;
+                          if (form) saveRow(row.id, form);
+                        }}
                       >
-                        Salvar
-                      </SubmitButton>
-                      <SubmitButton
+                        {saving ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            Salvando…
+                          </>
+                        ) : (
+                          'Salvar'
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
                         size="sm"
-                        pendingLabel="…"
-                        formAction={withActionToast(payTransactionAction, {
-                          loading: isReceive
-                            ? 'Registrando recebimento…'
-                            : 'Registrando pagamento…',
-                          success: actionPast,
-                        })}
+                        disabled={busy}
+                        onClick={(event) => {
+                          const form = event.currentTarget.form;
+                          if (form) payRow(row.id, form);
+                        }}
                       >
-                        {actionVerb}
-                      </SubmitButton>
+                        {payingThis ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            {actionGerund}…
+                          </>
+                        ) : (
+                          actionVerb
+                        )}
+                      </Button>
                     </form>
                   </TableCell>
                 </TableRow>

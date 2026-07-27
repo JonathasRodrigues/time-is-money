@@ -19,7 +19,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { ActionForm } from '@/components/action-form';
 import { createMonthlySeriesAction, createPendingTransactionAction } from '@/server/actions';
 
 type PayableFormKind = 'variable' | 'fixed';
@@ -172,11 +172,10 @@ export function NewPayableSheet({
           </div>
 
           {kind === 'variable' ? (
-            <form
-              action={withActionToast(createPendingTransactionAction, {
-                loading: 'Criando…',
-                success: 'Adicionado em contas a pagar',
-              })}
+            <ActionForm
+              action={createPendingTransactionAction}
+              loadingMessage="Criando…"
+              successMessage="Adicionado em contas a pagar"
               className="grid gap-3"
             >
               <input type="hidden" name="installmentCount" value={effectiveInstallmentCount} />
@@ -273,15 +272,14 @@ export function NewPayableSheet({
               <SubmitButton disabled={isParcelado && !canSubmitParcelado} pendingLabel="Criando…">
                 {isParcelado ? `Criar ${installmentCount} parcelas` : meta.submit}
               </SubmitButton>
-            </form>
+            </ActionForm>
           ) : null}
 
           {kind === 'fixed' ? (
-            <form
-              action={withActionToast(createMonthlySeriesAction, {
-                loading: 'Criando conta fixa…',
-                success: 'Conta fixa criada',
-              })}
+            <ActionForm
+              action={createMonthlySeriesAction}
+              loadingMessage="Criando conta fixa…"
+              successMessage="Conta fixa criada"
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="expense" />
@@ -320,7 +318,7 @@ export function NewPayableSheet({
                 defaultCostCenterId={defaultCostCenterId}
               />
               <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
-            </form>
+            </ActionForm>
           ) : null}
         </div>
       </SheetContent>

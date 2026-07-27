@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 import { formatBrlFromCents, formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { MoneyInput } from '@/components/ui/money-input';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { useBusyAction } from '@/hooks/use-busy-action';
+import { runWithToast } from '@/lib/action-toast';
+import { busySurfaceClassName } from '@/lib/busy-ui';
 import {
   confirmIncomeItemAction,
   confirmIncomeReceiptAction,
@@ -21,6 +23,8 @@ export interface PendingIncomeItem {
   suggestedCents: number | null;
 }
 
+type BusyKey = 'confirm-day' | 'snooze' | `item:${string}`;
+
 export function IncomeReceiptBanner({
   incomeDay,
   pendingIncomes = [],
@@ -28,6 +32,7 @@ export function IncomeReceiptBanner({
   incomeDay?: number | null;
   pendingIncomes?: PendingIncomeItem[];
 }): React.ReactElement {
+  const { busy, busyKey, isBusy, run } = useBusyAction<BusyKey>();
   const hasSeries = pendingIncomes.length > 0;
 
   return (
@@ -46,27 +51,59 @@ export function IncomeReceiptBanner({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!hasSeries ? (
-              <form
-                action={withActionToast(confirmIncomeReceiptAction, {
-                  loading: 'Confirmando…',
-                  success: 'Recebimento confirmado',
-                })}
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  void run('confirm-day', async () => {
+                    try {
+                      await runWithToast(() => confirmIncomeReceiptAction(), {
+                        loading: 'Confirmando…',
+                        success: 'Recebimento confirmado',
+                      });
+                    } catch {
+                      // toast / redirect
+                    }
+                  });
+                }}
               >
-                <SubmitButton size="sm" pendingLabel="Confirmando…">
-                  Sim, recebi — contas a pagar
-                </SubmitButton>
-              </form>
+                {busyKey === 'confirm-day' ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    Confirmando…
+                  </>
+                ) : (
+                  'Sim, recebi — contas a pagar'
+                )}
+              </Button>
             ) : null}
-            <form
-              action={withActionToast(snoozeIncomeReceiptAction, {
-                loading: 'Ok…',
-                success: 'Lembrete adiado',
-              })}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                void run('snooze', async () => {
+                  try {
+                    await runWithToast(() => snoozeIncomeReceiptAction(), {
+                      loading: 'Ok…',
+                      success: 'Lembrete adiado',
+                    });
+                  } catch {
+                    // toast / redirect
+                  }
+                });
+              }}
             >
-              <SubmitButton size="sm" variant="outline" pendingLabel="…">
-                Agora não
-              </SubmitButton>
-            </form>
+              {busyKey === 'snooze' ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden />…
+                </>
+              ) : (
+                'Agora não'
+              )}
+            </Button>
             <Button asChild size="sm" variant="ghost">
               <Link href="/payments?flow=receive">Contas a receber</Link>
             </Button>
@@ -77,10 +114,18 @@ export function IncomeReceiptBanner({
           <ul className="space-y-2 border-t border-primary/15 pt-3">
             {pendingIncomes.map((item) => {
               const suggestion = item.amountCents ?? item.suggestedCents;
+              const active = isBusy(`item:${item.id}`);
+
               return (
                 <li
                   key={item.id}
-                  className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  aria-busy={active || undefined}
+                  className={busySurfaceClassName({
+                    busy,
+                    active,
+                    className:
+                      'flex flex-col gap-2 rounded-lg border border-border/70 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between',
+                  })}
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{item.description}</p>
@@ -92,11 +137,21 @@ export function IncomeReceiptBanner({
                     </p>
                   </div>
                   <form
-                    action={withActionToast(confirmIncomeItemAction, {
-                      loading: 'Confirmando…',
-                      success: 'Receita confirmada',
-                    })}
                     className="flex items-center gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const formData = new FormData(event.currentTarget);
+                      void run(`item:${item.id}`, async () => {
+                        try {
+                          await runWithToast(() => confirmIncomeItemAction(formData), {
+                            loading: 'Confirmando…',
+                            success: 'Receita confirmada',
+                          });
+                        } catch {
+                          // toast já exibido
+                        }
+                      });
+                    }}
                   >
                     <input type="hidden" name="transactionId" value={item.id} />
                     <DateInput
@@ -104,6 +159,7 @@ export function IncomeReceiptBanner({
                       defaultValue={item.dueOn}
                       className="h-8 w-[9.5rem] bg-background"
                       required
+                      disabled={busy}
                     />
                     <MoneyInput
                       name="amount"
@@ -112,10 +168,18 @@ export function IncomeReceiptBanner({
                       placeholder="Valor"
                       defaultValue={suggestion != null ? formatCentsForBrInput(suggestion) : ''}
                       className="h-8 w-28 bg-background"
+                      disabled={busy}
                     />
-                    <SubmitButton size="sm" pendingLabel="…">
-                      Confirmar
-                    </SubmitButton>
+                    <Button type="submit" size="sm" disabled={busy}>
+                      {active ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" aria-hidden />
+                          Confirmando…
+                        </>
+                      ) : (
+                        'Confirmar'
+                      )}
+                    </Button>
                   </form>
                 </li>
               );

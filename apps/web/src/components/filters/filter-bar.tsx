@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-/** Barra de filtros flat — com indicador de atualização. */
+/** Barra de filtros flat — pending só opacidade (a barra de progresso fica no header). */
 export function FilterBar({
   children,
   className,
@@ -14,27 +14,19 @@ export function FilterBar({
 }): React.ReactElement {
   return (
     <div
-      className={cn('relative flex flex-wrap items-end gap-x-2 gap-y-2', className)}
+      className={cn(
+        'flex flex-wrap items-end gap-x-2 gap-y-2 transition-opacity duration-200',
+        pending && 'opacity-60',
+        className,
+      )}
       aria-busy={pending || undefined}
     >
-      <div
-        className={cn(
-          'flex flex-wrap items-end gap-x-2 gap-y-2 transition-opacity duration-200',
-          pending && 'opacity-70',
-        )}
-      >
-        {children}
-      </div>
       {pending ? (
-        <>
-          <span className="sr-only" aria-live="polite">
-            Atualizando…
-          </span>
-          <div className="pointer-events-none absolute inset-x-0 -bottom-1 h-0.5 overflow-hidden rounded-full">
-            <div className="h-full w-1/3 animate-navigation-progress bg-primary/70" />
-          </div>
-        </>
+        <span className="sr-only" aria-live="polite">
+          Atualizando…
+        </span>
       ) : null}
+      {children}
     </div>
   );
 }

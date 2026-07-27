@@ -18,7 +18,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { ActionForm } from '@/components/action-form';
 import { createMonthlySeriesAction, createTransactionAction } from '@/server/actions';
 
 type ReceivableFormKind = 'one_off' | 'monthly';
@@ -99,11 +99,10 @@ export function NewReceivableSheet({
           </div>
 
           {kind === 'one_off' ? (
-            <form
-              action={withActionToast(createTransactionAction, {
-                loading: 'Registrando receita…',
-                success: alreadyReceived ? 'Receita registrada' : 'Receita a receber criada',
-              })}
+            <ActionForm
+              action={createTransactionAction}
+              loadingMessage="Registrando receita…"
+              successMessage={alreadyReceived ? 'Receita registrada' : 'Receita a receber criada'}
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="income" />
@@ -153,15 +152,14 @@ export function NewReceivableSheet({
                 defaultCostCenterId={defaultCostCenterId}
               />
               <SubmitButton pendingLabel="Salvando…">{meta.submit}</SubmitButton>
-            </form>
+            </ActionForm>
           ) : null}
 
           {kind === 'monthly' ? (
-            <form
-              action={withActionToast(createMonthlySeriesAction, {
-                loading: 'Criando receita…',
-                success: 'Receita fixa criada',
-              })}
+            <ActionForm
+              action={createMonthlySeriesAction}
+              loadingMessage="Criando receita…"
+              successMessage="Receita fixa criada"
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="income" />
@@ -205,7 +203,7 @@ export function NewReceivableSheet({
                 defaultCostCenterId={defaultCostCenterId}
               />
               <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
-            </form>
+            </ActionForm>
           ) : null}
         </div>
       </SheetContent>

@@ -1,9 +1,15 @@
 'use client';
 
+import { useFormStatus } from 'react-dom';
 import { withActionToast } from '@/lib/action-toast';
+import { cn } from '@/lib/utils';
 
 type ServerFormAction = (formData: FormData) => Promise<unknown>;
 
+/**
+ * Form padrão TIM para server actions:
+ * toast + formulário meio desativado enquanto salva.
+ */
 export function ActionForm({
   action,
   successMessage,
@@ -23,8 +29,33 @@ export function ActionForm({
   });
 
   return (
-    <form action={bound} className={className}>
-      {children}
+    <form action={bound}>
+      <FormBusyBody className={className}>{children}</FormBusyBody>
     </form>
+  );
+}
+
+function FormBusyBody({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}): React.ReactElement {
+  const { pending } = useFormStatus();
+
+  return (
+    <div
+      className={cn(
+        'transition-opacity duration-150',
+        pending && 'pointer-events-none opacity-55',
+        className,
+      )}
+      aria-busy={pending || undefined}
+    >
+      <fieldset disabled={pending} className="contents">
+        {children}
+      </fieldset>
+    </div>
   );
 }

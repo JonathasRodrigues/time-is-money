@@ -18,7 +18,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { ActionForm } from '@/components/action-form';
 import { createTransactionAction } from '@/server/actions';
 import { cn } from '@/lib/utils';
 
@@ -78,11 +78,10 @@ export function NewTransactionSheet({
             Avulso no extrato. Contas fixas e a receber ficam em Contas.
           </SheetDescription>
         </SheetHeader>
-        <form
-          action={withActionToast(createTransactionAction, {
-            loading: 'Salvando lançamento…',
-            success: 'Lançamento salvo',
-          })}
+        <ActionForm
+          action={createTransactionAction}
+          loadingMessage="Salvando lançamento…"
+          successMessage="Lançamento salvo"
           className="mt-6 grid gap-4 px-4 pb-6"
         >
           <input type="hidden" name="type" value={type} />
@@ -213,7 +212,7 @@ export function NewTransactionSheet({
           <SubmitButton className="mt-2" pendingLabel="Salvando…">
             {isPaid ? 'Salvar no extrato' : isExpense ? 'Adicionar a pagar' : 'Adicionar a receber'}
           </SubmitButton>
-        </form>
+        </ActionForm>
       </SheetContent>
     </Sheet>
   );

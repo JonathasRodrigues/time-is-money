@@ -11,8 +11,7 @@ function normalizeRouteKey(pathname: string, search: string): string {
 }
 
 /**
- * Barra fina no header + sinaliza pending no NavigatingProvider.
- * Em navegação soft (Link), o conteúdo anterior permanece até a nova rota ficar pronta.
+ * Única barra de progresso do app — fica no header durante link/filtro.
  */
 export function NavigationProgress(): React.ReactElement {
   const pathname = usePathname();
@@ -31,7 +30,7 @@ export function NavigationProgress(): React.ReactElement {
     if (wasPending.current) {
       wasPending.current = false;
       setCompleting(true);
-      const timer = window.setTimeout(() => setCompleting(false), 200);
+      const timer = window.setTimeout(() => setCompleting(false), 180);
       return () => window.clearTimeout(timer);
     }
     return undefined;
@@ -80,15 +79,15 @@ export function NavigationProgress(): React.ReactElement {
       aria-valuemin={0}
       aria-valuemax={100}
       className={cn(
-        'pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5 overflow-hidden transition-opacity duration-200',
-        active ? 'opacity-100' : 'opacity-0',
+        'pointer-events-none absolute inset-x-0 bottom-0 z-30 h-[2px] overflow-hidden',
+        !active && 'opacity-0',
       )}
     >
       <div
         className={cn(
           'h-full bg-primary',
           isPending && 'w-1/3 animate-navigation-progress',
-          completing && !isPending && 'w-full transition-all duration-200 ease-out',
+          completing && !isPending && 'w-full transition-[width] duration-200 ease-out',
           !active && 'w-0',
         )}
       />
