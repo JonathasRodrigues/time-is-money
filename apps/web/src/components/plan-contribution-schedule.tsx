@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useTransition } from 'react';
 import {
   analyzeContributionSchedule,
   formatBrlFromCents,
@@ -9,6 +9,7 @@ import {
   parseBrlToCents,
   type PlanContributionRow,
 } from '@tim/domain';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
