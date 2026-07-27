@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import { ClerkProvider } from '@clerk/nextjs';
 import { shadcn } from '@clerk/ui/themes';
 import { IBM_Plex_Sans } from 'next/font/google';
@@ -53,6 +54,7 @@ export default function RootLayout({
       <RegisterServiceWorker />
       {children}
       <Toaster />
+      <Analytics />
     </TooltipProvider>
   );
 
