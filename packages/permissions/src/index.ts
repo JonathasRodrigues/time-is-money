@@ -9,6 +9,8 @@ export type Capability =
   | 'transactions.write'
   | 'financings.read'
   | 'financings.write'
+  | 'plans.read'
+  | 'plans.write'
   | 'import.write'
   | 'export.read'
   | 'jarvis.chat'
@@ -26,6 +28,8 @@ const ROLE_CAPABILITIES: Record<Role, ReadonlySet<Capability>> = {
     'transactions.write',
     'financings.read',
     'financings.write',
+    'plans.read',
+    'plans.write',
     'import.write',
     'export.read',
     'jarvis.chat',
@@ -40,6 +44,8 @@ const ROLE_CAPABILITIES: Record<Role, ReadonlySet<Capability>> = {
     'transactions.write',
     'financings.read',
     'financings.write',
+    'plans.read',
+    'plans.write',
     'import.write',
     'export.read',
     'jarvis.chat',
@@ -50,6 +56,7 @@ const ROLE_CAPABILITIES: Record<Role, ReadonlySet<Capability>> = {
     'settings.read',
     'transactions.read',
     'financings.read',
+    'plans.read',
     'export.read',
     'jarvis.chat',
     'dashboard.read',

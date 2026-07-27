@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { formatBrlFromCents, type AmortizationSystem } from '@tim/domain';
+import { formatBrlFromCents, type AmortizationSystem, type FinancingCategory } from '@tim/domain';
 import { accounts, categories, costCenters, financings, installments } from '@tim/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -53,6 +53,10 @@ export default async function FinancingsPage({
     .orderBy(asc(installments.number));
 
   const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name }));
+  const potAccounts = accs
+    .filter((account) => account.kind === 'investment_pot')
+    .map((account) => ({ id: account.id, name: account.name }));
+  const planCenters = centers.map((center) => ({ id: center.id, name: center.name }));
 
   let totalRemaining = 0;
   let totalPaid = 0;
@@ -193,6 +197,7 @@ export default async function FinancingsPage({
                 financingId={financing.id}
                 name={financing.name}
                 institution={financing.institution}
+                category={(financing.category ?? 'other') as FinancingCategory}
                 system={system}
                 rateLabel={rateLabel}
                 installmentCount={financing.installmentCount}
@@ -217,6 +222,12 @@ export default async function FinancingsPage({
                   principalCents: item.principalCents,
                   paidOn: item.paidOn,
                 }))}
+                potAccounts={potAccounts}
+                planCenters={planCenters}
+                financingPayoffContext={{
+                  balanceCents: remainingCents,
+                  amortizationCents: amortizeCents,
+                }}
               />
             ),
           )}

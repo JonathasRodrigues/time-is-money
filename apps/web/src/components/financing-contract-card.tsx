@@ -2,12 +2,19 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { formatBrlFromCents, formatIsoDateBr, type AmortizationSystem } from '@tim/domain';
+import {
+  formatBrlFromCents,
+  formatIsoDateBr,
+  FINANCING_CATEGORY_LABEL,
+  type AmortizationSystem,
+  type FinancingCategory,
+} from '@tim/domain';
 import {
   AmortizeSelectedDialog,
   PayInstallmentsDialog,
   type FinancingInstallmentRow,
 } from '@/components/installment-pay-dialogs';
+import { NewPlanSheet } from '@/components/new-plan-sheet';
 import { RebuildFinancingDialog } from '@/components/rebuild-financing-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +40,7 @@ export function FinancingContractCard({
   financingId,
   name,
   institution,
+  category,
   system,
   rateLabel,
   installmentCount,
@@ -48,10 +56,14 @@ export function FinancingContractCard({
   nextPending,
   categories,
   installments,
+  potAccounts,
+  planCenters,
+  financingPayoffContext,
 }: {
   financingId: string;
   name: string;
   institution: string | null;
+  category: FinancingCategory;
   system: AmortizationSystem;
   rateLabel: string;
   installmentCount: number;
@@ -67,6 +79,12 @@ export function FinancingContractCard({
   nextPending: FinancingInstallmentRow | null;
   categories: Array<{ id: string; name: string }>;
   installments: FinancingInstallmentRow[];
+  potAccounts?: Array<{ id: string; name: string }>;
+  planCenters?: Array<{ id: string; name: string }>;
+  financingPayoffContext?: {
+    balanceCents: number;
+    amortizationCents: number;
+  };
 }): React.ReactElement {
   const [showSchedule, setShowSchedule] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -115,7 +133,8 @@ export function FinancingContractCard({
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
-              <Badge variant="secondary">{SYSTEM_LABEL[system]}</Badge>
+              <Badge variant="secondary">{FINANCING_CATEGORY_LABEL[category]}</Badge>
+              <Badge variant="outline">{SYSTEM_LABEL[system]}</Badge>
               <RebuildFinancingDialog
                 financing={{
                   id: financingId,
@@ -185,6 +204,31 @@ export function FinancingContractCard({
             {formatBrlFromCents(nextPending.amountCents)}. Selecione parcelas para pagar (com valor
             editável) ou amortizar.
           </p>
+        ) : null}
+
+        {pendingCount > 0 && potAccounts && planCenters && financingPayoffContext ? (
+          <NewPlanSheet
+            centers={planCenters}
+            potAccounts={potAccounts}
+            financings={[
+              {
+                id: financingId,
+                name,
+                balanceCents: financingPayoffContext.balanceCents,
+                system,
+                annualRateBps,
+                installmentAmountCents,
+                amortizationCents: financingPayoffContext.amortizationCents,
+                firstDueOn: nextPending?.dueOn ?? firstDueOn,
+              },
+            ]}
+            presetFinancingId={financingId}
+            trigger={
+              <Button type="button" variant="outline" size="sm">
+                Planejar quitação
+              </Button>
+            }
+          />
         ) : null}
       </div>
 

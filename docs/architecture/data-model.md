@@ -42,7 +42,19 @@ Lançamentos financeiros.
 Financiamentos com cronograma de parcelas.
 
 - `installment_status`: `pending` | `paid` | `skipped`
+- `financing_category`: `real_estate` | `vehicle` | `personal` | `other`
 - Parcela paga gera `transaction` e referencia `transaction_id`
+
+### plans + plan_items
+
+Metas de planejamento (viagens, quitação, custom).
+
+- `plan_kind`: `travel` | `financing_payoff` | `custom`
+- Meta total = soma de `plan_items.amount_cents`
+- `linked_account_id` → caixinha (`investment_pot`) para progresso
+- `financing_id` opcional (obrigatório em `financing_payoff`)
+
+Ver [`docs/domain/planning.md`](../domain/planning.md).
 
 ## Jarvis
 
@@ -91,6 +103,9 @@ erDiagram
   cost_centers ||--o{ accounts : contains
   categories ||--o{ category_aliases : has
   financings ||--o{ installments : has
+  plans ||--o{ plan_items : has
+  plans }o--o| accounts : saves_in
+  plans }o--o| financings : payoff_for
   installments }o--o| transactions : pays_via
   categories ||--o{ transactions : categorizes
   accounts ||--o{ transactions : books

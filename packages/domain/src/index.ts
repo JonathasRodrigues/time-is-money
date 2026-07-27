@@ -708,6 +708,25 @@ export {
 } from './wealth';
 
 export {
+  comparePayoffStrategies,
+  computeMonthlySavingsNeeded,
+  computePlanProgress,
+  defaultAmortizationForCategory,
+  FINANCING_CATEGORY_LABEL,
+  monthsUntil,
+  PLAN_KIND_LABEL,
+  simulatePayoffByTargetDate,
+  simulatePayoffWithExtraPayment,
+  sumPlanItems,
+  type FinancingCategory,
+  type PayoffSimulationResult,
+  type PayoffStrategyComparison,
+  type PlanItemLike,
+  type PlanKind,
+  type PlanProgress,
+} from './planning';
+
+export {
   emailsMatchForInvite,
   inviteExpiresAt,
   INVITE_TTL_DAYS,

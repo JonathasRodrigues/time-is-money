@@ -10,6 +10,8 @@ import {
   installments,
   institutions,
   memberships,
+  planItems,
+  plans,
   seedHouseholdDefaults,
   accountTransfers,
   transactionSeries,
@@ -637,6 +639,7 @@ export async function seedDemoWorld(
         installmentAmountCents: amortization.firstInstallmentCents,
         annualRateBps,
         amortizationSystem: 'price',
+        category: 'vehicle',
         firstDueOn,
       })
       .returning();
@@ -1121,6 +1124,60 @@ export async function seedDemoWorld(
     .from(transactions)
     .where(eq(transactions.householdId, householdId));
   transactionCount = allTx.length;
+
+  const viagemPot = (
+    await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.householdId, householdId), eq(accounts.name, 'Caixinha Viagem')))
+      .limit(1)
+  )[0];
+
+  const existingPlan = (
+    await db
+      .select()
+      .from(plans)
+      .where(and(eq(plans.householdId, householdId), eq(plans.name, 'Viagem Japão 2027')))
+      .limit(1)
+  )[0];
+
+  if (!existingPlan && viagemPot) {
+    const [plan] = await db
+      .insert(plans)
+      .values({
+        householdId,
+        kind: 'travel',
+        name: 'Viagem Japão 2027',
+        targetDate: '2027-06-15',
+        linkedAccountId: viagemPot.id,
+      })
+      .returning();
+    if (plan) {
+      await db.insert(planItems).values([
+        {
+          householdId,
+          planId: plan.id,
+          label: 'Passagem',
+          amountCents: 3_000_00,
+          sortOrder: 0,
+        },
+        {
+          householdId,
+          planId: plan.id,
+          label: 'Hotel',
+          amountCents: 5_000_00,
+          sortOrder: 1,
+        },
+        {
+          householdId,
+          planId: plan.id,
+          label: 'Passeios e comida',
+          amountCents: 2_000_00,
+          sortOrder: 2,
+        },
+      ]);
+    }
+  }
 
   return {
     householdId,

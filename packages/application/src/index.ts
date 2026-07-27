@@ -10,6 +10,8 @@ import {
   costCenters,
   financings,
   installments,
+  planItems,
+  plans,
   transactionSeries,
   transactions,
 } from '@tim/db';
@@ -27,6 +29,7 @@ import type {
   CreateFinancingInput,
   CreateMonthlySeriesInput,
   CreatePendingTransactionInput,
+  CreatePlanInput,
   CreateTransactionInput,
   CreateTransferInput,
   PayInstallmentInput,
@@ -35,14 +38,18 @@ import type {
   PayTransactionsBulkInput,
   RebuildFinancingInput,
   SoftDeleteFinancingInput,
+  SoftDeletePlanInput,
   SoftDeleteTransactionInput,
   UpdatePendingAmountInput,
+  UpdatePlanInput,
+  UpsertPlanItemsInput,
   UpdateTransactionInput,
 } from '@tim/validators';
 import {
   createFinancingSchema,
   createMonthlySeriesSchema,
   createPendingTransactionSchema,
+  createPlanSchema,
   createTransactionSchema,
   createTransferSchema,
   payInstallmentSchema,
@@ -51,8 +58,11 @@ import {
   payTransactionsBulkSchema,
   rebuildFinancingSchema,
   softDeleteFinancingSchema,
+  softDeletePlanSchema,
   softDeleteTransactionSchema,
   updatePendingAmountSchema,
+  updatePlanSchema,
+  upsertPlanItemsSchema,
   updateTransactionSchema,
 } from '@tim/validators';
 import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
@@ -765,6 +775,7 @@ export async function createFinancing(ctx: AppContext, raw: CreateFinancingInput
       installmentAmountCents: amortization.firstInstallmentCents,
       annualRateBps: input.annualRateBps ?? amortization.annualRateBps,
       amortizationSystem: input.amortizationSystem,
+      category: input.category,
       firstDueOn: input.firstDueOn,
     })
     .returning();
@@ -1479,6 +1490,251 @@ export async function softDeleteFinancing(ctx: AppContext, raw: SoftDeleteFinanc
     action: 'delete',
     resourceType: 'financing',
     resourceId: financing.id,
+  });
+}
+
+async function assertInvestmentPotAccount(
+  ctx: AppContext,
+  householdId: string,
+  accountId: string,
+): Promise<void> {
+  const [account] = await ctx.db
+    .select({ kind: accounts.kind, isArchived: accounts.isArchived })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.householdId, householdId)));
+  if (!account) {
+    throw new Error('Conta vinculada não encontrada');
+  }
+  if (account.isArchived) {
+    throw new Error('Conta vinculada está arquivada');
+  }
+  if (account.kind !== 'investment_pot') {
+    throw new Error('Plano deve estar vinculado a uma caixinha');
+  }
+}
+
+export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'plans.write');
+  const input = createPlanSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  if (input.financingId) {
+    const [financing] = await ctx.db
+      .select({ id: financings.id })
+      .from(financings)
+      .where(
+        and(
+          eq(financings.id, input.financingId),
+          eq(financings.householdId, session.householdId),
+          isNull(financings.deletedAt),
+        ),
+      );
+    if (!financing) {
+      throw new Error('Financiamento não encontrado');
+    }
+  }
+
+  let linkedAccountId = input.linkedAccountId ?? null;
+
+  if (input.createLinkedAccount) {
+    const costCenterId = input.linkedAccountCostCenterId;
+    if (!costCenterId) {
+      throw new Error('Centro de custo é obrigatório ao criar caixinha');
+    }
+    const [center] = await ctx.db
+      .select({ id: costCenters.id })
+      .from(costCenters)
+      .where(
+        and(eq(costCenters.id, costCenterId), eq(costCenters.householdId, session.householdId)),
+      );
+    if (!center) {
+      throw new Error('Centro de custo não encontrado');
+    }
+    const accountName = input.linkedAccountName?.trim() || `Caixinha — ${input.name.trim()}`;
+    const [account] = await ctx.db
+      .insert(accounts)
+      .values({
+        householdId: session.householdId,
+        costCenterId,
+        name: accountName,
+        kind: 'investment_pot',
+        balanceCents: 0,
+        yieldType: 'none',
+      })
+      .returning();
+    if (!account) {
+      throw new Error('Falha ao criar caixinha');
+    }
+    linkedAccountId = account.id;
+  }
+
+  if (linkedAccountId) {
+    await assertInvestmentPotAccount(ctx, session.householdId, linkedAccountId);
+  }
+
+  const [plan] = await ctx.db
+    .insert(plans)
+    .values({
+      householdId: session.householdId,
+      kind: input.kind,
+      name: input.name.trim(),
+      targetDate: input.targetDate,
+      linkedAccountId,
+      financingId: input.financingId ?? null,
+      notes: input.notes?.trim() || null,
+    })
+    .returning();
+
+  if (!plan) {
+    throw new Error('Falha ao criar plano');
+  }
+
+  await ctx.db.insert(planItems).values(
+    input.items.map((item, index) => ({
+      householdId: session.householdId,
+      planId: plan.id,
+      label: item.label.trim(),
+      amountCents: item.amountCents,
+      sortOrder: item.sortOrder ?? index,
+      categoryId: item.categoryId ?? null,
+    })),
+  );
+
+  await writeAudit(ctx, {
+    action: 'create',
+    resourceType: 'plan',
+    resourceId: plan.id,
+    metadata: { kind: input.kind },
+  });
+
+  return plan;
+}
+
+export async function updatePlan(ctx: AppContext, raw: UpdatePlanInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'plans.write');
+  const input = updatePlanSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [existing] = await ctx.db
+    .select()
+    .from(plans)
+    .where(
+      and(
+        eq(plans.id, input.planId),
+        eq(plans.householdId, session.householdId),
+        isNull(plans.deletedAt),
+      ),
+    );
+  if (!existing) {
+    throw new Error('Plano não encontrado');
+  }
+
+  if (input.linkedAccountId) {
+    await assertInvestmentPotAccount(ctx, session.householdId, input.linkedAccountId);
+  }
+
+  const [updated] = await ctx.db
+    .update(plans)
+    .set({
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}),
+      ...(input.linkedAccountId !== undefined ? { linkedAccountId: input.linkedAccountId } : {}),
+      ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
+    })
+    .where(eq(plans.id, input.planId))
+    .returning();
+
+  await writeAudit(ctx, {
+    action: 'update',
+    resourceType: 'plan',
+    resourceId: input.planId,
+  });
+
+  return updated;
+}
+
+export async function upsertPlanItems(ctx: AppContext, raw: UpsertPlanItemsInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'plans.write');
+  const input = upsertPlanItemsSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [existing] = await ctx.db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(
+      and(
+        eq(plans.id, input.planId),
+        eq(plans.householdId, session.householdId),
+        isNull(plans.deletedAt),
+      ),
+    );
+  if (!existing) {
+    throw new Error('Plano não encontrado');
+  }
+
+  await ctx.db.delete(planItems).where(eq(planItems.planId, input.planId));
+
+  const created = await ctx.db
+    .insert(planItems)
+    .values(
+      input.items.map((item, index) => ({
+        householdId: session.householdId,
+        planId: input.planId,
+        label: item.label.trim(),
+        amountCents: item.amountCents,
+        sortOrder: item.sortOrder ?? index,
+        categoryId: item.categoryId ?? null,
+      })),
+    )
+    .returning();
+
+  await writeAudit(ctx, {
+    action: 'upsert_items',
+    resourceType: 'plan',
+    resourceId: input.planId,
+    metadata: { itemCount: created.length },
+  });
+
+  return created;
+}
+
+export async function softDeletePlan(ctx: AppContext, raw: SoftDeletePlanInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'plans.write');
+  const input = softDeletePlanSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [existing] = await ctx.db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(
+      and(
+        eq(plans.id, input.planId),
+        eq(plans.householdId, session.householdId),
+        isNull(plans.deletedAt),
+      ),
+    );
+  if (!existing) {
+    throw new Error('Plano não encontrado');
+  }
+
+  await ctx.db.update(plans).set({ deletedAt: new Date() }).where(eq(plans.id, input.planId));
+
+  await writeAudit(ctx, {
+    action: 'delete',
+    resourceType: 'plan',
+    resourceId: input.planId,
   });
 }
 

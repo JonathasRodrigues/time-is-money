@@ -2,11 +2,14 @@
 
 import {
   buildAmortizationSchedule,
+  defaultAmortizationForCategory,
   formatBrlFromCents,
   formatIsoDateBr,
+  FINANCING_CATEGORY_LABEL,
   parseBrlToCents,
   type AmortizationSummary,
   type AmortizationSystem,
+  type FinancingCategory,
 } from '@tim/domain';
 import { useMemo, useState, useTransition } from 'react';
 import { CheckCircle2, Calculator } from 'lucide-react';
@@ -101,6 +104,7 @@ export function FinancingForm({
   defaultCostCenterId,
 }: FinancingFormProps): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const [category, setCategory] = useState<FinancingCategory>('vehicle');
   const [system, setSystem] = useState<AmortizationSystem>('price');
   const [principal, setPrincipal] = useState('80000');
   const [count, setCount] = useState('48');
@@ -213,6 +217,27 @@ export function FinancingForm({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="institution">Instituição</Label>
             <Input id="institution" name="institution" placeholder="Banco" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="category">Tipo</Label>
+            <select
+              id="category"
+              name="category"
+              className={nativeSelectClassName}
+              value={category}
+              onChange={(event) => {
+                const next = event.target.value as FinancingCategory;
+                setCategory(next);
+                setSystem(defaultAmortizationForCategory(next));
+                setConfirmed(false);
+              }}
+            >
+              {(Object.keys(FINANCING_CATEGORY_LABEL) as FinancingCategory[]).map((key) => (
+                <option key={key} value={key}>
+                  {FINANCING_CATEGORY_LABEL[key]}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="amortizationSystem">Sistema</Label>

@@ -19,6 +19,13 @@ export const transactionStatusEnum = pgEnum('transaction_status', ['pending', 'p
 export const seriesIntervalEnum = pgEnum('series_interval', ['monthly']);
 export const installmentStatusEnum = pgEnum('installment_status', ['pending', 'paid', 'skipped']);
 export const amortizationSystemEnum = pgEnum('amortization_system', ['price', 'sac', 'fixed']);
+export const financingCategoryEnum = pgEnum('financing_category', [
+  'real_estate',
+  'vehicle',
+  'personal',
+  'other',
+]);
+export const planKindEnum = pgEnum('plan_kind', ['travel', 'financing_payoff', 'custom']);
 export const importStatusEnum = pgEnum('import_status', [
   'pending',
   'preview',
@@ -256,10 +263,55 @@ export const financings = pgTable('financings', {
   installmentAmountCents: integer('installment_amount_cents').notNull(),
   annualRateBps: integer('annual_rate_bps'),
   amortizationSystem: amortizationSystemEnum('amortization_system').notNull().default('fixed'),
+  category: financingCategoryEnum('category').notNull().default('other'),
   firstDueOn: varchar('first_due_on', { length: 10 }).notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const plans = pgTable(
+  'plans',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    kind: planKindEnum('kind').notNull(),
+    name: varchar('name', { length: 160 }).notNull(),
+    targetDate: varchar('target_date', { length: 10 }).notNull(),
+    linkedAccountId: uuid('linked_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    financingId: uuid('financing_id').references(() => financings.id, {
+      onDelete: 'set null',
+    }),
+    notes: text('notes'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('plans_household_deleted_idx').on(table.householdId, table.deletedAt)],
+);
+
+export const planItems = pgTable(
+  'plan_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id, { onDelete: 'cascade' }),
+    label: varchar('label', { length: 120 }).notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    categoryId: uuid('category_id').references(() => categories.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('plan_items_plan_idx').on(table.planId, table.sortOrder)],
+);
 
 export const installments = pgTable('installments', {
   id: uuid('id').defaultRandom().primaryKey(),

@@ -23,6 +23,7 @@ export default async function middleware(req: NextRequest) {
     '/invite(.*)',
     '/api/cron(.*)',
     '/manifest.webmanifest',
+    '/sw.js',
     '/icons(.*)',
   ]);
 

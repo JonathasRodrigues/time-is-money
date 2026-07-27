@@ -22,6 +22,8 @@ Fonte: `/home/flaesh/time-is-money/packages/permissions/src/index.ts`
 | `transactions.write` |   ✓   |   ✓    |        |
 | `financings.read`    |   ✓   |   ✓    |   ✓    |
 | `financings.write`   |   ✓   |   ✓    |        |
+| `plans.read`         |   ✓   |   ✓    |   ✓    |
+| `plans.write`        |   ✓   |   ✓    |        |
 | `import.write`       |   ✓   |   ✓    |        |
 | `export.read`        |   ✓   |   ✓    |   ✓    |
 | `jarvis.chat`        |   ✓   |   ✓    |   ✓    |
@@ -53,6 +55,7 @@ Campo `session.mfaEnabled` permanece na API (sempre `true` por compatibilidade) 
 | `/dashboard`                 | `dashboard.read` (implícito via auth) |
 | `/transactions` (write)      | `transactions.write`                  |
 | `/financings` (write)        | `financings.write`                    |
+| `/planning` (write)          | `plans.write`                         |
 | `/import-export` (upload)    | `import.write`                        |
 | `/import-export` (download)  | `export.read`                         |
 | `/jarvis` (chat)             | `jarvis.chat`                         |

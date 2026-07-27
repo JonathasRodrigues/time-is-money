@@ -11,11 +11,13 @@ import {
   LayoutDashboard,
   PiggyBank,
   SlidersHorizontal,
+  Target,
   Upload,
   Users,
   Wallet,
 } from 'lucide-react';
 import { JarvisDock } from '@/components/jarvis-dock';
+import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -49,6 +51,7 @@ const primaryNav = [
   { href: '/wealth', label: 'Patrimônio', icon: Landmark },
   { href: '/transactions', label: 'Extrato', icon: ArrowLeftRight },
   { href: '/financings', label: 'Financiamentos', icon: PiggyBank },
+  { href: '/planning', label: 'Planejamento', icon: Target },
 ] as const;
 
 const cadastrosNav = [
@@ -216,6 +219,7 @@ export function AppShell({
         </SidebarContent>
 
         <SidebarFooter className="p-3">
+          <PwaInstallPrompt />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

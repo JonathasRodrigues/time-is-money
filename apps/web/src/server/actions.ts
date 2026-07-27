@@ -3,17 +3,21 @@
 import {
   createTransaction,
   createFinancing,
+  createPlan,
   payInstallmentWithCategory,
   payInstallmentsBulk,
   rebuildFinancing,
   softDeleteFinancing,
+  softDeletePlan,
   softDeleteTransaction,
   createPendingTransaction,
   createMonthlySeries,
   payTransaction,
   payTransactionsBulk,
   updatePendingAmount,
+  updatePlan,
   updateTransaction,
+  upsertPlanItems,
   ensureSeriesInstancesForMonth,
   createTransfer,
 } from '@tim/application';
@@ -36,6 +40,7 @@ import {
   createFinancingSchema,
   createMonthlySeriesSchema,
   createPendingTransactionSchema,
+  createPlanSchema,
   createTransactionSchema,
   createTransferSchema,
   notificationPrefsSchema,
@@ -45,7 +50,11 @@ import {
   updateAccountSchema,
   updateInstitutionSchema,
   updatePendingAmountSchema,
+  updatePlanSchema,
+  upsertPlanItemsSchema,
   updateTransactionSchema,
+  softDeletePlanSchema,
+  planKindSchema,
 } from '@tim/validators';
 import { requireCapability, requireSession } from '@tim/auth';
 import { auth, currentUser } from '@clerk/nextjs/server';
@@ -321,6 +330,14 @@ export async function createFinancingAction(formData: FormData) {
     systemRaw === 'price' || systemRaw === 'sac' || systemRaw === 'fixed' ? systemRaw : 'fixed';
   const installmentRaw = String(formData.get('installmentAmount') || '');
   const rateRaw = String(formData.get('annualRate') || '');
+  const categoryRaw = String(formData.get('category') || 'other');
+  const category =
+    categoryRaw === 'real_estate' ||
+    categoryRaw === 'vehicle' ||
+    categoryRaw === 'personal' ||
+    categoryRaw === 'other'
+      ? categoryRaw
+      : 'other';
   const parsed = createFinancingSchema.parse({
     householdId: session.householdId,
     costCenterId: String(formData.get('costCenterId')),
@@ -334,6 +351,7 @@ export async function createFinancingAction(formData: FormData) {
     firstDueOn: String(formData.get('firstDueOn')),
     annualRateBps: rateRaw === '' ? undefined : Math.round(Number(rateRaw.replace(',', '.')) * 100),
     amortizationSystem,
+    category,
   });
   await createFinancing(ctx, parsed);
   revalidateApp();
@@ -603,6 +621,72 @@ export async function confirmIncomeItemAction(formData: FormData) {
     redirect('/payments?flow=receive&payday=1');
   }
 
+  revalidateApp();
+}
+
+export async function createPlanAction(input: {
+  kind: 'travel' | 'financing_payoff' | 'custom';
+  name: string;
+  targetDate: string;
+  linkedAccountId?: string | null;
+  financingId?: string | null;
+  notes?: string;
+  items: Array<{ label: string; amountCents: number; sortOrder?: number }>;
+  createLinkedAccount?: boolean;
+  linkedAccountName?: string;
+  linkedAccountCostCenterId?: string;
+}) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const parsed = createPlanSchema.parse({
+    ...input,
+    kind: planKindSchema.parse(input.kind),
+    householdId: session.householdId,
+  });
+  const plan = await createPlan(ctx, parsed);
+  revalidateApp();
+  return { planId: plan.id };
+}
+
+export async function updatePlanAction(input: {
+  planId: string;
+  name?: string;
+  targetDate?: string;
+  linkedAccountId?: string | null;
+  notes?: string | null;
+}) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const parsed = updatePlanSchema.parse({
+    ...input,
+    householdId: session.householdId,
+  });
+  await updatePlan(ctx, parsed);
+  revalidateApp();
+}
+
+export async function upsertPlanItemsAction(input: {
+  planId: string;
+  items: Array<{ label: string; amountCents: number; sortOrder?: number }>;
+}) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const parsed = upsertPlanItemsSchema.parse({
+    ...input,
+    householdId: session.householdId,
+  });
+  await upsertPlanItems(ctx, parsed);
+  revalidateApp();
+}
+
+export async function deletePlanAction(planId: string) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const parsed = softDeletePlanSchema.parse({
+    planId,
+    householdId: session.householdId,
+  });
+  await softDeletePlan(ctx, parsed);
   revalidateApp();
 }
 

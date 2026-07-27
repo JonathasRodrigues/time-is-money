@@ -198,6 +198,67 @@ export const createTransferSchema = z
   });
 
 export const amortizationSystemSchema = z.enum(['price', 'sac', 'fixed']);
+export const financingCategorySchema = z.enum(['real_estate', 'vehicle', 'personal', 'other']);
+export const planKindSchema = z.enum(['travel', 'financing_payoff', 'custom']);
+
+export const planItemInputSchema = z.object({
+  label: z.string().min(1).max(120),
+  amountCents: moneyCentsSchema,
+  sortOrder: z.number().int().min(0).optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+});
+
+export const createPlanSchema = z
+  .object({
+    householdId: z.string().uuid(),
+    kind: planKindSchema,
+    name: z.string().min(1).max(160),
+    targetDate: isoDateSchema,
+    linkedAccountId: z.string().uuid().nullable().optional(),
+    financingId: z.string().uuid().nullable().optional(),
+    notes: z.string().max(5000).optional(),
+    items: z.array(planItemInputSchema).min(1).max(50),
+    /** Cria caixinha automaticamente se linkedAccountId omitido. */
+    createLinkedAccount: z.boolean().optional(),
+    linkedAccountName: z.string().min(1).max(120).optional(),
+    linkedAccountCostCenterId: z.string().uuid().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.kind === 'financing_payoff' && !data.financingId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Financiamento é obrigatório para planos de quitação',
+        path: ['financingId'],
+      });
+    }
+    if (data.createLinkedAccount && !data.linkedAccountCostCenterId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Centro de custo é obrigatório ao criar caixinha',
+        path: ['linkedAccountCostCenterId'],
+      });
+    }
+  });
+
+export const updatePlanSchema = z.object({
+  householdId: z.string().uuid(),
+  planId: z.string().uuid(),
+  name: z.string().min(1).max(160).optional(),
+  targetDate: isoDateSchema.optional(),
+  linkedAccountId: z.string().uuid().nullable().optional(),
+  notes: z.string().max(5000).nullable().optional(),
+});
+
+export const upsertPlanItemsSchema = z.object({
+  householdId: z.string().uuid(),
+  planId: z.string().uuid(),
+  items: z.array(planItemInputSchema).min(1).max(50),
+});
+
+export const softDeletePlanSchema = z.object({
+  householdId: z.string().uuid(),
+  planId: z.string().uuid(),
+});
 
 export const createFinancingSchema = z
   .object({
@@ -212,6 +273,7 @@ export const createFinancingSchema = z
     firstDueOn: isoDateSchema,
     annualRateBps: z.number().int().min(0).max(100_000).optional(),
     amortizationSystem: amortizationSystemSchema.default('fixed'),
+    category: financingCategorySchema.default('other'),
   })
   .superRefine((data, ctx) => {
     if (data.amortizationSystem === 'fixed') {
@@ -271,6 +333,7 @@ export const rebuildFinancingSchema = z
     firstDueOn: isoDateSchema,
     annualRateBps: z.number().int().min(0).max(100_000).optional(),
     amortizationSystem: amortizationSystemSchema,
+    category: financingCategorySchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.amortizationSystem === 'fixed') {
@@ -382,6 +445,13 @@ export type UpdateAccountBalanceInput = z.infer<typeof updateAccountBalanceSchem
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 export type CreateFinancingInput = z.infer<typeof createFinancingSchema>;
+export type PlanKind = z.infer<typeof planKindSchema>;
+export type FinancingCategory = z.infer<typeof financingCategorySchema>;
+export type PlanItemInput = z.infer<typeof planItemInputSchema>;
+export type CreatePlanInput = z.infer<typeof createPlanSchema>;
+export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
+export type UpsertPlanItemsInput = z.infer<typeof upsertPlanItemsSchema>;
+export type SoftDeletePlanInput = z.infer<typeof softDeletePlanSchema>;
 export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>;
 export type PayInstallmentsBulkInput = z.infer<typeof payInstallmentsBulkSchema>;
 export type RebuildFinancingInput = z.infer<typeof rebuildFinancingSchema>;
