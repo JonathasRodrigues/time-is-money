@@ -11,6 +11,7 @@ import {
   financings,
   installments,
   planItems,
+  planContributions,
   plans,
   transactionSeries,
   transactions,
@@ -43,6 +44,7 @@ import type {
   UpdatePendingAmountInput,
   UpdatePlanInput,
   UpsertPlanItemsInput,
+  UpsertPlanContributionsInput,
   UpdateTransactionInput,
 } from '@tim/validators';
 import {
@@ -63,6 +65,7 @@ import {
   updatePendingAmountSchema,
   updatePlanSchema,
   upsertPlanItemsSchema,
+  upsertPlanContributionsSchema,
   updateTransactionSchema,
 } from '@tim/validators';
 import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
@@ -1584,6 +1587,7 @@ export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
       targetDate: input.targetDate,
       linkedAccountId,
       financingId: input.financingId ?? null,
+      monthlyTargetCents: input.monthlyTargetCents ?? null,
       notes: input.notes?.trim() || null,
     })
     .returning();
@@ -1602,6 +1606,18 @@ export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
       categoryId: item.categoryId ?? null,
     })),
   );
+
+  if (input.contributions && input.contributions.length > 0) {
+    await ctx.db.insert(planContributions).values(
+      input.contributions.map((row, index) => ({
+        householdId: session.householdId,
+        planId: plan.id,
+        dueOn: row.dueOn,
+        amountCents: row.amountCents,
+        sortOrder: row.sortOrder ?? index,
+      })),
+    );
+  }
 
   await writeAudit(ctx, {
     action: 'create',
@@ -1702,6 +1718,60 @@ export async function upsertPlanItems(ctx: AppContext, raw: UpsertPlanItemsInput
     resourceType: 'plan',
     resourceId: input.planId,
     metadata: { itemCount: created.length },
+  });
+
+  return created;
+}
+
+export async function upsertPlanContributions(ctx: AppContext, raw: UpsertPlanContributionsInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'plans.write');
+  const input = upsertPlanContributionsSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [existing] = await ctx.db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(
+      and(
+        eq(plans.id, input.planId),
+        eq(plans.householdId, session.householdId),
+        isNull(plans.deletedAt),
+      ),
+    );
+  if (!existing) {
+    throw new Error('Plano não encontrado');
+  }
+
+  if (input.monthlyTargetCents !== undefined) {
+    await ctx.db
+      .update(plans)
+      .set({ monthlyTargetCents: input.monthlyTargetCents })
+      .where(eq(plans.id, input.planId));
+  }
+
+  await ctx.db.delete(planContributions).where(eq(planContributions.planId, input.planId));
+
+  const created = await ctx.db
+    .insert(planContributions)
+    .values(
+      input.contributions.map((row, index) => ({
+        householdId: session.householdId,
+        planId: input.planId,
+        dueOn: row.dueOn,
+        amountCents: row.amountCents,
+        sortOrder: row.sortOrder ?? index,
+      })),
+    )
+    .returning();
+
+  await writeAudit(ctx, {
+    action: 'upsert_contributions',
+    resourceType: 'plan',
+    resourceId: input.planId,
+    metadata: { contributionCount: created.length },
   });
 
   return created;

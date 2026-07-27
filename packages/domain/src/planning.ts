@@ -105,6 +105,83 @@ export function computeMonthlySavingsNeeded(input: {
   return Math.ceil(remaining / months);
 }
 
+export interface PlanContributionRow {
+  dueOn: string;
+  amountCents: number;
+}
+
+export interface ContributionScheduleAnalysis {
+  targetCents: number;
+  savedCents: number;
+  plannedCents: number;
+  projectedTotalCents: number;
+  /** Positivo = ainda falta; negativo = sobra no cronograma. */
+  gapCents: number;
+  meetsTarget: boolean;
+  monthCount: number;
+}
+
+/** Soma dos aportes planejados no cronograma. */
+export function sumContributions(contributions: readonly PlanItemLike[]): number {
+  return contributions.reduce((sum, row) => sum + Math.max(0, row.amountCents), 0);
+}
+
+/** Data alvo a partir de hoje + N meses. */
+export function targetDateFromMonthCount(fromDate: string, monthCount: number): string {
+  return addMonthsLocal(fromDate, Math.max(1, monthCount));
+}
+
+/** Gera cronograma mensal com o mesmo valor em cada mês. */
+export function buildMonthlyContributionSchedule(input: {
+  startOn: string;
+  monthCount: number;
+  monthlyCents: number;
+}): PlanContributionRow[] {
+  const monthCount = Math.max(1, Math.min(120, Math.floor(input.monthCount)));
+  const monthlyCents = Math.max(0, Math.floor(input.monthlyCents));
+  return Array.from({ length: monthCount }, (_, index) => ({
+    dueOn: addMonthsLocal(input.startOn, index),
+    amountCents: monthlyCents,
+  }));
+}
+
+/** Analisa se o cronograma + saldo atual cobre a meta. */
+export function analyzeContributionSchedule(input: {
+  targetCents: number;
+  savedCents: number;
+  contributions: readonly PlanItemLike[];
+}): ContributionScheduleAnalysis {
+  const targetCents = Math.max(0, input.targetCents);
+  const savedCents = Math.max(0, input.savedCents);
+  const plannedCents = sumContributions(input.contributions);
+  const projectedTotalCents = savedCents + plannedCents;
+  const gapCents = targetCents - projectedTotalCents;
+  return {
+    targetCents,
+    savedCents,
+    plannedCents,
+    projectedTotalCents,
+    gapCents,
+    meetsTarget: gapCents <= 0,
+    monthCount: input.contributions.length,
+  };
+}
+
+/** Distribui o gap restante no último mês do cronograma. */
+export function applyGapToLastContribution(
+  contributions: readonly PlanContributionRow[],
+  gapCents: number,
+): PlanContributionRow[] {
+  if (contributions.length === 0 || gapCents === 0) {
+    return [...contributions];
+  }
+  const rows = contributions.map((row) => ({ ...row }));
+  const last = rows[rows.length - 1];
+  if (!last) return rows;
+  last.amountCents = Math.max(0, last.amountCents + gapCents);
+  return rows;
+}
+
 /** Sistema de amortização sugerido por categoria de financiamento. */
 export function defaultAmortizationForCategory(category: FinancingCategory): AmortizationSystem {
   if (category === 'real_estate') return 'sac';

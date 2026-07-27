@@ -208,6 +208,12 @@ export const planItemInputSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
 });
 
+export const planContributionInputSchema = z.object({
+  dueOn: isoDateSchema,
+  amountCents: moneyCentsSchema,
+  sortOrder: z.number().int().min(0).optional(),
+});
+
 export const createPlanSchema = z
   .object({
     householdId: z.string().uuid(),
@@ -216,8 +222,10 @@ export const createPlanSchema = z
     targetDate: isoDateSchema,
     linkedAccountId: z.string().uuid().nullable().optional(),
     financingId: z.string().uuid().nullable().optional(),
+    monthlyTargetCents: z.number().int().min(0).nullable().optional(),
     notes: z.string().max(5000).optional(),
     items: z.array(planItemInputSchema).min(1).max(50),
+    contributions: z.array(planContributionInputSchema).max(120).optional(),
     /** Cria caixinha automaticamente se linkedAccountId omitido. */
     createLinkedAccount: z.boolean().optional(),
     linkedAccountName: z.string().min(1).max(120).optional(),
@@ -253,6 +261,13 @@ export const upsertPlanItemsSchema = z.object({
   householdId: z.string().uuid(),
   planId: z.string().uuid(),
   items: z.array(planItemInputSchema).min(1).max(50),
+});
+
+export const upsertPlanContributionsSchema = z.object({
+  householdId: z.string().uuid(),
+  planId: z.string().uuid(),
+  monthlyTargetCents: z.number().int().min(0).nullable().optional(),
+  contributions: z.array(planContributionInputSchema).min(1).max(120),
 });
 
 export const softDeletePlanSchema = z.object({
@@ -448,9 +463,11 @@ export type CreateFinancingInput = z.infer<typeof createFinancingSchema>;
 export type PlanKind = z.infer<typeof planKindSchema>;
 export type FinancingCategory = z.infer<typeof financingCategorySchema>;
 export type PlanItemInput = z.infer<typeof planItemInputSchema>;
+export type PlanContributionInput = z.infer<typeof planContributionInputSchema>;
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
 export type UpsertPlanItemsInput = z.infer<typeof upsertPlanItemsSchema>;
+export type UpsertPlanContributionsInput = z.infer<typeof upsertPlanContributionsSchema>;
 export type SoftDeletePlanInput = z.infer<typeof softDeletePlanSchema>;
 export type PayInstallmentInput = z.infer<typeof payInstallmentSchema>;
 export type PayInstallmentsBulkInput = z.infer<typeof payInstallmentsBulkSchema>;

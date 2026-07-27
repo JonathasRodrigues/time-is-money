@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  analyzeContributionSchedule,
+  applyGapToLastContribution,
+  buildMonthlyContributionSchedule,
   comparePayoffStrategies,
   computeMonthlySavingsNeeded,
   computePlanProgress,
@@ -94,6 +97,54 @@ describe('simulatePayoffByTargetDate', () => {
     });
     expect(result.extraMonthlyCents).toBeGreaterThanOrEqual(0);
     expect(result.simulation.months).toBeLessThanOrEqual(monthsUntil('2028-02-01', '2026-02-01'));
+  });
+});
+
+describe('analyzeContributionSchedule', () => {
+  it('calcula gap quando aportes não cobrem meta', () => {
+    const analysis = analyzeContributionSchedule({
+      targetCents: 1_000_000,
+      savedCents: 0,
+      contributions: Array.from({ length: 10 }, () => ({ amountCents: 80_000 })),
+    });
+    expect(analysis.plannedCents).toBe(800_000);
+    expect(analysis.gapCents).toBe(200_000);
+    expect(analysis.meetsTarget).toBe(false);
+  });
+
+  it('marca meta atingida quando cronograma cobre', () => {
+    const analysis = analyzeContributionSchedule({
+      targetCents: 800_000,
+      savedCents: 0,
+      contributions: Array.from({ length: 10 }, () => ({ amountCents: 80_000 })),
+    });
+    expect(analysis.meetsTarget).toBe(true);
+    expect(analysis.gapCents).toBe(0);
+  });
+});
+
+describe('buildMonthlyContributionSchedule', () => {
+  it('gera N meses com valor fixo', () => {
+    const rows = buildMonthlyContributionSchedule({
+      startOn: '2026-02-01',
+      monthCount: 3,
+      monthlyCents: 50_000,
+    });
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.amountCents === 50_000)).toBe(true);
+    expect(rows[2]?.dueOn).toBe('2026-04-01');
+  });
+});
+
+describe('applyGapToLastContribution', () => {
+  it('ajusta último mês para fechar gap', () => {
+    const base = buildMonthlyContributionSchedule({
+      startOn: '2026-01-01',
+      monthCount: 2,
+      monthlyCents: 80_000,
+    });
+    const adjusted = applyGapToLastContribution(base, 20_000);
+    expect(adjusted[1]?.amountCents).toBe(100_000);
   });
 });
 

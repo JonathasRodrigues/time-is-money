@@ -57,6 +57,13 @@
       "when": 1753530000000,
       "tag": "0007_planning",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1753540000000,
+      "tag": "0008_plan_contributions",
+      "breakpoints": true
     }
   ]
 }

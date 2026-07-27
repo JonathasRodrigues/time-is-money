@@ -53,6 +53,8 @@ Metas de planejamento (viagens, quitação, custom).
 - Meta total = soma de `plan_items.amount_cents`
 - `linked_account_id` → caixinha (`investment_pot`) para progresso
 - `financing_id` opcional (obrigatório em `financing_payoff`)
+- `monthly_target_cents` — aporte mensal da estratégia
+- `plan_contributions` — cronograma mensal (`due_on`, `amount_cents`, `sort_order`)
 
 Ver [`docs/domain/planning.md`](../domain/planning.md).
 

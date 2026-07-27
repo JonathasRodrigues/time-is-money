@@ -11,6 +11,7 @@ import {
 import { Plus, Trash2 } from 'lucide-react';
 import { LinkAccountSelect } from '@/components/link-account-select';
 import { PlanPayoffSimulator } from '@/components/plan-payoff-simulator';
+import { PlanScheduleGenerator } from '@/components/plan-schedule-generator';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
@@ -28,7 +29,9 @@ import {
 import { SubmitButton } from '@/components/ui/submit-button';
 import { runWithToast } from '@/lib/action-toast';
 import { createPlanAction } from '@/server/actions';
-import type { AmortizationSystem } from '@tim/domain';
+import type { AmortizationSystem, PlanContributionRow } from '@tim/domain';
+
+type CreationMode = 'detailed' | 'generator';
 
 interface Option {
   id: string;
@@ -68,6 +71,7 @@ export function NewPlanSheet({
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [creationMode, setCreationMode] = useState<CreationMode>('generator');
   const [kind, setKind] = useState<PlanKind>(presetFinancingId ? 'financing_payoff' : 'travel');
   const [name, setName] = useState('');
   const [targetDate, setTargetDate] = useState('');
@@ -82,8 +86,13 @@ export function NewPlanSheet({
   const [linkedAccountCostCenterId, setLinkedAccountCostCenterId] = useState(
     defaultCostCenterId ?? centers[0]?.id ?? '',
   );
+  const [genMonthCount, setGenMonthCount] = useState('10');
+  const [genMonthlyAmount, setGenMonthlyAmount] = useState('800');
+  const [genGoalAmount, setGenGoalAmount] = useState('10000');
+  const [contributions, setContributions] = useState<PlanContributionRow[]>([]);
 
   const selectedFinancing = financings.find((f) => f.id === financingId) ?? null;
+  const monthlyTargetCents = parseBrlToCents(genMonthlyAmount);
 
   const parsedItems = useMemo(() => {
     return items
@@ -99,7 +108,19 @@ export function NewPlanSheet({
       .filter((item): item is NonNullable<typeof item> => item != null);
   }, [items]);
 
-  const targetCents = sumPlanItems(parsedItems);
+  const targetCents =
+    creationMode === 'generator' && kind !== 'financing_payoff'
+      ? (parseBrlToCents(genGoalAmount) ?? 0)
+      : sumPlanItems(parsedItems);
+
+  const submitItems = useMemo(() => {
+    if (creationMode === 'generator' && kind !== 'financing_payoff') {
+      const cents = parseBrlToCents(genGoalAmount);
+      if (cents == null || cents <= 0 || !name.trim()) return [];
+      return [{ label: name.trim(), amountCents: cents, sortOrder: 0 }];
+    }
+    return parsedItems;
+  }, [creationMode, kind, genGoalAmount, name, parsedItems]);
 
   function resetForKind(nextKind: PlanKind): void {
     setKind(nextKind);
@@ -124,7 +145,7 @@ export function NewPlanSheet({
 
   function handleSubmit(event: React.FormEvent): void {
     event.preventDefault();
-    if (parsedItems.length === 0 || !name.trim() || !targetDate) return;
+    if (submitItems.length === 0 || !name.trim() || !targetDate) return;
 
     startTransition(async () => {
       try {
@@ -136,12 +157,24 @@ export function NewPlanSheet({
               targetDate,
               financingId: kind === 'financing_payoff' ? financingId : null,
               linkedAccountId: createLinkedAccount ? null : linkedAccountId || null,
+              monthlyTargetCents:
+                creationMode === 'generator' && monthlyTargetCents != null
+                  ? monthlyTargetCents
+                  : null,
               createLinkedAccount,
               linkedAccountName: linkedAccountName.trim() || undefined,
               linkedAccountCostCenterId: createLinkedAccount
                 ? linkedAccountCostCenterId
                 : undefined,
-              items: parsedItems,
+              items: submitItems,
+              contributions:
+                creationMode === 'generator' && contributions.length > 0
+                  ? contributions.map((row, index) => ({
+                      dueOn: row.dueOn,
+                      amountCents: row.amountCents,
+                      sortOrder: index,
+                    }))
+                  : undefined,
             }),
           { loading: 'Criando plano…', success: 'Plano criado' },
         );
@@ -196,110 +229,149 @@ export function NewPlanSheet({
             </select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="planName">Nome</Label>
-            <Input
-              id="planName"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              placeholder="Viagem ao Japão 2027"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="planTargetDate">Data alvo</Label>
-            <DateInput
-              id="planTargetDate"
-              value={targetDate}
-              onValueChange={setTargetDate}
-              required
-            />
-          </div>
-
-          {kind === 'financing_payoff' ? (
+          {kind !== 'financing_payoff' ? (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="planFinancingId">Financiamento</Label>
+              <Label htmlFor="creationMode">Como montar o plano</Label>
               <select
-                id="planFinancingId"
+                id="creationMode"
                 className={nativeSelectClassName}
-                value={financingId}
-                onChange={(event) => {
-                  const id = event.target.value;
-                  setFinancingId(id);
-                  const financing = financings.find((f) => f.id === id);
-                  if (financing) {
-                    setName(`Quitar ${financing.name}`);
-                    setItems([
-                      {
-                        label: 'Reserva para quitação',
-                        amount: String(Math.round(financing.balanceCents / 100)),
-                      },
-                    ]);
-                  }
-                }}
-                required
+                value={creationMode}
+                onChange={(event) => setCreationMode(event.target.value as CreationMode)}
               >
-                <option value="">Selecione…</option>
-                {financings.map((financing) => (
-                  <option key={financing.id} value={financing.id}>
-                    {financing.name} · {formatBrlFromCents(financing.balanceCents)} restante
-                  </option>
-                ))}
+                <option value="generator">Gerar cronograma (meta + aporte mensal)</option>
+                <option value="detailed">Detalhado (itens avulsos)</option>
               </select>
             </div>
           ) : null}
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Itens do plano</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setItems((prev) => [...prev, { label: '', amount: '' }])}
-              >
-                Adicionar
-              </Button>
-            </div>
-            {items.map((item, index) => (
-              <div key={index} className="grid grid-cols-[1fr_8rem_auto] gap-2">
+          {creationMode === 'generator' && kind !== 'financing_payoff' ? (
+            <PlanScheduleGenerator
+              goalName={name}
+              goalAmount={genGoalAmount}
+              monthCount={genMonthCount}
+              monthlyAmount={genMonthlyAmount}
+              contributions={contributions}
+              onGoalNameChange={setName}
+              onGoalAmountChange={setGenGoalAmount}
+              onMonthCountChange={setGenMonthCount}
+              onMonthlyAmountChange={setGenMonthlyAmount}
+              onContributionsChange={setContributions}
+              onTargetDateChange={setTargetDate}
+            />
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="planName">Nome</Label>
                 <Input
-                  value={item.label}
-                  onChange={(event) =>
-                    setItems((prev) =>
-                      prev.map((row, i) =>
-                        i === index ? { ...row, label: event.target.value } : row,
-                      ),
-                    )
-                  }
-                  placeholder="Descrição"
+                  id="planName"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  placeholder="Viagem ao Japão 2027"
                 />
-                <MoneyInput
-                  value={item.amount}
-                  onValueChange={(value) =>
-                    setItems((prev) =>
-                      prev.map((row, i) => (i === index ? { ...row, amount: value } : row)),
-                    )
-                  }
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
-                  disabled={items.length <= 1}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
               </div>
-            ))}
-            <p className="text-sm font-medium tabular-nums">
-              Total da meta: {formatBrlFromCents(targetCents)}
-            </p>
-          </div>
 
-          {selectedFinancing && kind === 'financing_payoff' && targetDate ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="planTargetDate">Data alvo</Label>
+                <DateInput
+                  id="planTargetDate"
+                  value={targetDate}
+                  onValueChange={setTargetDate}
+                  required
+                />
+              </div>
+
+              {kind === 'financing_payoff' ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="planFinancingId">Financiamento</Label>
+                  <select
+                    id="planFinancingId"
+                    className={nativeSelectClassName}
+                    value={financingId}
+                    onChange={(event) => {
+                      const id = event.target.value;
+                      setFinancingId(id);
+                      const financing = financings.find((f) => f.id === id);
+                      if (financing) {
+                        setName(`Quitar ${financing.name}`);
+                        setItems([
+                          {
+                            label: 'Reserva para quitação',
+                            amount: String(Math.round(financing.balanceCents / 100)),
+                          },
+                        ]);
+                      }
+                    }}
+                    required
+                  >
+                    <option value="">Selecione…</option>
+                    {financings.map((financing) => (
+                      <option key={financing.id} value={financing.id}>
+                        {financing.name} · {formatBrlFromCents(financing.balanceCents)} restante
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Itens do plano</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setItems((prev) => [...prev, { label: '', amount: '' }])}
+                  >
+                    Adicionar
+                  </Button>
+                </div>
+                {items.map((item, index) => (
+                  <div key={index} className="grid grid-cols-[1fr_8rem_auto] gap-2">
+                    <Input
+                      value={item.label}
+                      onChange={(event) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index ? { ...row, label: event.target.value } : row,
+                          ),
+                        )
+                      }
+                      placeholder="Descrição"
+                    />
+                    <MoneyInput
+                      value={item.amount}
+                      onValueChange={(value) =>
+                        setItems((prev) =>
+                          prev.map((row, i) => (i === index ? { ...row, amount: value } : row)),
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                      disabled={items.length <= 1}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-sm font-medium tabular-nums">
+                  Total da meta: {formatBrlFromCents(targetCents)}
+                </p>
+              </div>
+            </>
+          )}
+
+          {creationMode === 'generator' && targetDate ? (
+            <p className="text-sm text-muted-foreground">
+              Data alvo: <span className="font-medium text-foreground">{targetDate}</span>
+            </p>
+          ) : null}
+
+          {kind === 'financing_payoff' && selectedFinancing && targetDate ? (
             <PlanPayoffSimulator
               balanceCents={selectedFinancing.balanceCents}
               system={selectedFinancing.system}
@@ -324,7 +396,13 @@ export function NewPlanSheet({
             onNewAccountCostCenterIdChange={setLinkedAccountCostCenterId}
           />
 
-          <SubmitButton isPending={pending} disabled={parsedItems.length === 0}>
+          <SubmitButton
+            isPending={pending}
+            disabled={
+              submitItems.length === 0 ||
+              (creationMode === 'generator' && contributions.length === 0)
+            }
+          >
             Criar plano
           </SubmitButton>
         </form>

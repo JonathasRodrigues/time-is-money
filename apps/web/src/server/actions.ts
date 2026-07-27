@@ -18,6 +18,7 @@ import {
   updatePlan,
   updateTransaction,
   upsertPlanItems,
+  upsertPlanContributions,
   ensureSeriesInstancesForMonth,
   createTransfer,
 } from '@tim/application';
@@ -52,6 +53,7 @@ import {
   updatePendingAmountSchema,
   updatePlanSchema,
   upsertPlanItemsSchema,
+  upsertPlanContributionsSchema,
   updateTransactionSchema,
   softDeletePlanSchema,
   planKindSchema,
@@ -630,8 +632,10 @@ export async function createPlanAction(input: {
   targetDate: string;
   linkedAccountId?: string | null;
   financingId?: string | null;
+  monthlyTargetCents?: number | null;
   notes?: string;
   items: Array<{ label: string; amountCents: number; sortOrder?: number }>;
+  contributions?: Array<{ dueOn: string; amountCents: number; sortOrder?: number }>;
   createLinkedAccount?: boolean;
   linkedAccountName?: string;
   linkedAccountCostCenterId?: string;
@@ -676,6 +680,21 @@ export async function upsertPlanItemsAction(input: {
     householdId: session.householdId,
   });
   await upsertPlanItems(ctx, parsed);
+  revalidateApp();
+}
+
+export async function upsertPlanContributionsAction(input: {
+  planId: string;
+  monthlyTargetCents?: number | null;
+  contributions: Array<{ dueOn: string; amountCents: number; sortOrder?: number }>;
+}) {
+  const ctx = await createAppContext();
+  const session = requireSession(ctx.session);
+  const parsed = upsertPlanContributionsSchema.parse({
+    ...input,
+    householdId: session.householdId,
+  });
+  await upsertPlanContributions(ctx, parsed);
   revalidateApp();
 }
 

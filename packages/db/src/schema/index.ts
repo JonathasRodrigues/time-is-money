@@ -285,6 +285,8 @@ export const plans = pgTable(
     financingId: uuid('financing_id').references(() => financings.id, {
       onDelete: 'set null',
     }),
+    /** Aporte mensal de referência da estratégia. */
+    monthlyTargetCents: integer('monthly_target_cents'),
     notes: text('notes'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -311,6 +313,24 @@ export const planItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('plan_items_plan_idx').on(table.planId, table.sortOrder)],
+);
+
+export const planContributions = pgTable(
+  'plan_contributions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id, { onDelete: 'cascade' }),
+    dueOn: varchar('due_on', { length: 10 }).notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('plan_contributions_plan_idx').on(table.planId, table.sortOrder)],
 );
 
 export const installments = pgTable('installments', {

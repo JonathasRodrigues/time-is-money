@@ -21,6 +21,17 @@ Quando `linked_account_id` aponta para conta `investment_pot`:
 - `savedCents` = saldo da caixinha
 - `progressPercent` = `computePlanProgress(saved, target)`
 - `computeMonthlySavingsNeeded` estima aporte mensual até `target_date`
+- `monthly_target_cents` guarda a estratégia mensal escolhida (ex.: R$ 800/mês)
+
+## Cronograma de aportes (`plan_contributions`)
+
+Cada linha é um mês com `due_on` e `amount_cents`. Funções em `@tim/domain`:
+
+- `buildMonthlyContributionSchedule` — gera N meses com o mesmo valor
+- `analyzeContributionSchedule` — compara meta vs saldo + soma planejada (`gapCents`)
+- `targetDateFromMonthCount` — data alvo a partir do prazo em meses
+
+Na UI, o modo **Gerar cronograma** (criação de plano) preenche os meses; o usuário pode editar valores individuais para fechar a meta quando o valor fixo mensal não basta.
 
 ## Quitação de financiamento
 
@@ -40,4 +51,4 @@ Reutiliza matemática de `@tim/domain` (Price/SAC); não persiste cenários simu
 
 ## UI
 
-Rota `/planning` — cards com barra de progresso, itens editáveis e simulador de quitação.
+Rota `/planning` — cards com barra de progresso, cronograma de aportes editável, itens detalhados e simulador de quitação.

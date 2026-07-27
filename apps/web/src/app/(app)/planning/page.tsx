@@ -8,7 +8,15 @@ import {
   type AmortizationSystem,
   type PlanKind,
 } from '@tim/domain';
-import { accounts, costCenters, financings, installments, planItems, plans } from '@tim/db';
+import {
+  accounts,
+  costCenters,
+  financings,
+  installments,
+  planContributions,
+  planItems,
+  plans,
+} from '@tim/db';
 import { hasCapability } from '@tim/permissions';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import Link from 'next/link';
@@ -39,28 +47,33 @@ export default async function PlanningPage({
   const kindFilter = params.kind ?? 'all';
   const canWrite = hasCapability(session.role, 'plans.write');
 
-  const [centers, accs, financingRows, installmentRows, planRows, itemRows] = await Promise.all([
-    db.select().from(costCenters).where(eq(costCenters.householdId, session.householdId)),
-    db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.householdId, session.householdId), eq(accounts.isArchived, false))),
-    db
-      .select()
-      .from(financings)
-      .where(and(eq(financings.householdId, session.householdId), isNull(financings.deletedAt))),
-    db
-      .select()
-      .from(installments)
-      .where(eq(installments.householdId, session.householdId))
-      .orderBy(asc(installments.number)),
-    db
-      .select()
-      .from(plans)
-      .where(and(eq(plans.householdId, session.householdId), isNull(plans.deletedAt)))
-      .orderBy(asc(plans.targetDate)),
-    db.select().from(planItems).where(eq(planItems.householdId, session.householdId)),
-  ]);
+  const [centers, accs, financingRows, installmentRows, planRows, itemRows, contributionRows] =
+    await Promise.all([
+      db.select().from(costCenters).where(eq(costCenters.householdId, session.householdId)),
+      db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.householdId, session.householdId), eq(accounts.isArchived, false))),
+      db
+        .select()
+        .from(financings)
+        .where(and(eq(financings.householdId, session.householdId), isNull(financings.deletedAt))),
+      db
+        .select()
+        .from(installments)
+        .where(eq(installments.householdId, session.householdId))
+        .orderBy(asc(installments.number)),
+      db
+        .select()
+        .from(plans)
+        .where(and(eq(plans.householdId, session.householdId), isNull(plans.deletedAt)))
+        .orderBy(asc(plans.targetDate)),
+      db.select().from(planItems).where(eq(planItems.householdId, session.householdId)),
+      db
+        .select()
+        .from(planContributions)
+        .where(eq(planContributions.householdId, session.householdId)),
+    ]);
 
   const potAccounts = accs
     .filter((account) => account.kind === 'investment_pot')
@@ -73,6 +86,12 @@ export default async function PlanningPage({
     const list = itemsByPlan.get(item.planId) ?? [];
     list.push(item);
     itemsByPlan.set(item.planId, list);
+  }
+  const contributionsByPlan = new Map<string, typeof contributionRows>();
+  for (const row of contributionRows) {
+    const list = contributionsByPlan.get(row.planId) ?? [];
+    list.push(row);
+    contributionsByPlan.set(row.planId, list);
   }
 
   const financingOptions = financingRows
@@ -118,12 +137,19 @@ export default async function PlanningPage({
       targetDate: plan.targetDate,
       savedCents: linkedAccount?.balanceCents ?? 0,
       targetCents,
+      monthlyTargetCents: plan.monthlyTargetCents,
       linkedAccountName: linkedAccount?.name ?? null,
       financingName: financing?.name ?? null,
       items: planItemList.map((item) => ({
         label: item.label,
         amountCents: item.amountCents,
       })),
+      contributions: (contributionsByPlan.get(plan.id) ?? [])
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((row) => ({
+          dueOn: row.dueOn,
+          amountCents: row.amountCents,
+        })),
       financingPayoff:
         plan.kind === 'financing_payoff' && financingOption
           ? {

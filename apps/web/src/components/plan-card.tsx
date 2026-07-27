@@ -1,17 +1,13 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import {
-  formatBrlFromCents,
-  formatIsoDateBr,
-  PLAN_KIND_LABEL,
-  computeMonthlySavingsNeeded,
-  computePlanProgress,
-  type PlanKind,
-} from '@tim/domain';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { PlanItemsTable, type PlanItemRow } from '@/components/plan-items-table';
+import {
+  PlanContributionSchedule,
+  type ContributionRow,
+} from '@/components/plan-contribution-schedule';
 import { PlanPayoffSimulator } from '@/components/plan-payoff-simulator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +15,15 @@ import { cn } from '@/lib/utils';
 import { runWithToast } from '@/lib/action-toast';
 import { deletePlanAction } from '@/server/actions';
 import type { AmortizationSystem } from '@tim/domain';
+import {
+  analyzeContributionSchedule,
+  computeMonthlySavingsNeeded,
+  computePlanProgress,
+  formatBrlFromCents,
+  formatIsoDateBr,
+  PLAN_KIND_LABEL,
+  type PlanKind,
+} from '@tim/domain';
 
 export interface PlanCardData {
   id: string;
@@ -27,9 +32,11 @@ export interface PlanCardData {
   targetDate: string;
   savedCents: number;
   targetCents: number;
+  monthlyTargetCents: number | null;
   linkedAccountName: string | null;
   financingName: string | null;
   items: PlanItemRow[];
+  contributions: ContributionRow[];
   financingPayoff?: {
     balanceCents: number;
     system: AmortizationSystem;
@@ -44,13 +51,22 @@ export interface PlanCardData {
 export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
   const [expanded, setExpanded] = useState(true);
   const [pending, startTransition] = useTransition();
+  const [contributions, setContributions] = useState(plan.contributions);
 
   const progress = computePlanProgress(plan.savedCents, plan.targetCents);
-  const monthlyNeeded = computeMonthlySavingsNeeded({
+  const scheduleAnalysis = analyzeContributionSchedule({
     targetCents: plan.targetCents,
     savedCents: plan.savedCents,
-    targetDate: plan.targetDate,
+    contributions,
   });
+  const monthlyNeeded =
+    plan.monthlyTargetCents != null && plan.monthlyTargetCents > 0
+      ? plan.monthlyTargetCents
+      : computeMonthlySavingsNeeded({
+          targetCents: plan.targetCents,
+          savedCents: plan.savedCents,
+          targetDate: plan.targetDate,
+        });
 
   const subtitle = useMemo(() => {
     const parts = [`Meta até ${formatIsoDateBr(plan.targetDate)}`];
@@ -114,6 +130,13 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
               <p className="font-semibold tabular-nums">
                 {monthlyNeeded > 0 ? formatBrlFromCents(monthlyNeeded) : '—'}
               </p>
+              {contributions.length > 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {scheduleAnalysis.gapCents > 0
+                    ? `Falta ${formatBrlFromCents(scheduleAnalysis.gapCents)} no cronograma`
+                    : 'Cronograma fecha a meta'}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -153,6 +176,17 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
               amortizationCents={plan.financingPayoff.amortizationCents}
               firstDueOn={plan.financingPayoff.firstDueOn}
               targetDate={plan.targetDate}
+            />
+          ) : null}
+          {contributions.length > 0 ? (
+            <PlanContributionSchedule
+              targetCents={plan.targetCents}
+              savedCents={plan.savedCents}
+              monthlyTargetCents={plan.monthlyTargetCents}
+              contributions={contributions}
+              onChange={plan.canWrite ? setContributions : undefined}
+              readOnly={!plan.canWrite}
+              planId={plan.canWrite ? plan.id : undefined}
             />
           ) : null}
           <PlanItemsTable planId={plan.id} items={plan.items} readOnly={!plan.canWrite} />

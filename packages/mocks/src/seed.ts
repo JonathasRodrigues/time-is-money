@@ -10,6 +10,7 @@ import {
   installments,
   institutions,
   memberships,
+  planContributions,
   planItems,
   plans,
   seedHouseholdDefaults,
@@ -18,7 +19,12 @@ import {
   transactions,
   userPreferences,
 } from '@tim/db';
-import { buildAmortizationSchedule, dueOnForMonth, yearMonthFromIso } from '@tim/domain';
+import {
+  buildAmortizationSchedule,
+  buildMonthlyContributionSchedule,
+  dueOnForMonth,
+  yearMonthFromIso,
+} from '@tim/domain';
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { DEMO } from './session';
 
@@ -1142,6 +1148,13 @@ export async function seedDemoWorld(
   )[0];
 
   if (!existingPlan && viagemPot) {
+    const scheduleStart = '2026-08-01';
+    const monthlyCents = 800_00;
+    const contributionRows = buildMonthlyContributionSchedule({
+      startOn: scheduleStart,
+      monthCount: 10,
+      monthlyCents,
+    });
     const [plan] = await db
       .insert(plans)
       .values({
@@ -1150,6 +1163,7 @@ export async function seedDemoWorld(
         name: 'Viagem Japão 2027',
         targetDate: '2027-06-15',
         linkedAccountId: viagemPot.id,
+        monthlyTargetCents: monthlyCents,
       })
       .returning();
     if (plan) {
@@ -1176,6 +1190,15 @@ export async function seedDemoWorld(
           sortOrder: 2,
         },
       ]);
+      await db.insert(planContributions).values(
+        contributionRows.map((row, index) => ({
+          householdId,
+          planId: plan.id,
+          dueOn: row.dueOn,
+          amountCents: row.amountCents,
+          sortOrder: index,
+        })),
+      );
     }
   }
 
