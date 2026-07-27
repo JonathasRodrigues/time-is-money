@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import { formatCentsForBrInput, parseBrlToCents } from '@tim/domain';
 import { Download, Loader2, Upload } from 'lucide-react';
 import {
   commitImportAction,
@@ -15,8 +16,10 @@ import { nativeSelectClassName } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import {
   Table,
   TableBody,
@@ -45,34 +48,6 @@ function BusyButtonLabel({
   );
 }
 const PAGE_SIZE = 50;
-
-function formatCentsInput(cents: number | undefined): string {
-  if (cents == null) return '';
-  return (cents / 100).toFixed(2).replace('.', ',');
-}
-
-function parseCentsInput(raw: string): number | null {
-  const cleaned = raw.replace(/[R$\s]/gi, '').trim();
-  if (!cleaned) return null;
-  const hasComma = cleaned.includes(',');
-  const hasDot = cleaned.includes('.');
-  let normalized: string;
-  if (hasComma && hasDot) {
-    const lastComma = cleaned.lastIndexOf(',');
-    const lastDot = cleaned.lastIndexOf('.');
-    normalized =
-      lastDot > lastComma
-        ? cleaned.replace(/,/g, '')
-        : cleaned.replace(/\./g, '').replace(',', '.');
-  } else if (hasComma) {
-    normalized = cleaned.replace(/\./g, '').replace(',', '.');
-  } else {
-    normalized = cleaned;
-  }
-  const value = Number(normalized);
-  if (Number.isNaN(value) || value <= 0) return null;
-  return Math.round(value * 100);
-}
 
 function countByStatus(rows: ImportPreviewRowDto[]): {
   ok: number;
@@ -247,11 +222,11 @@ export function ImportExportClient(): React.ReactElement {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="from">De</Label>
-                  <Input id="from" name="from" type="date" />
+                  <DateInput id="from" name="from" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="to">Até</Label>
-                  <Input id="to" name="to" type="date" />
+                  <DateInput id="to" name="to" />
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -508,11 +483,10 @@ export function ImportExportClient(): React.ReactElement {
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="date"
+                        <DateInput
                           className="h-8 min-w-32"
                           value={row.occurredOn ?? ''}
-                          onChange={(e) => patchRow(row.id, { occurredOn: e.target.value })}
+                          onValueChange={(iso) => patchRow(row.id, { occurredOn: iso })}
                         />
                       </TableCell>
                       <TableCell>
@@ -523,11 +497,13 @@ export function ImportExportClient(): React.ReactElement {
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
+                        <MoneyInput
                           className="h-8 tabular-nums"
-                          value={formatCentsInput(row.amountCents)}
-                          onChange={(e) => {
-                            const cents = parseCentsInput(e.target.value);
+                          value={
+                            row.amountCents != null ? formatCentsForBrInput(row.amountCents) : ''
+                          }
+                          onValueChange={(br) => {
+                            const cents = parseBrlToCents(br);
                             if (cents != null) patchRow(row.id, { amountCents: cents });
                           }}
                         />

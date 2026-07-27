@@ -19,8 +19,10 @@ import { ActionForm } from '@/components/action-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { createTransferAction } from '@/server/actions';
 import { getAuthSession, getDb } from '@/server/db';
@@ -180,25 +182,11 @@ export default async function WealthPage(): Promise<React.ReactElement> {
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="amount">Valor (R$)</Label>
-                <Input
-                  id="amount"
-                  name="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="100,00"
-                />
+                <MoneyInput id="amount" name="amount" min="0.01" required placeholder="100,00" />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="occurredOn">Data</Label>
-                <Input
-                  id="occurredOn"
-                  name="occurredOn"
-                  type="date"
-                  required
-                  defaultValue={todayIso()}
-                />
+                <DateInput id="occurredOn" name="occurredOn" required defaultValue={todayIso()} />
               </div>
               <div className="grid gap-1.5 md:col-span-2">
                 <Label htmlFor="description">Descrição (opcional)</Label>

@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { formatCentsForBrInput, normalizeMoneyFormValue, parseBrlToCents } from '@tim/domain';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import {
   Sheet,
   SheetContent,
@@ -22,15 +25,13 @@ import { createMonthlySeriesAction, createPendingTransactionAction } from '@/ser
 type PayableFormKind = 'variable' | 'fixed';
 
 function parseAmountToCents(raw: string): number | null {
-  const normalized = raw.trim().replace(',', '.');
-  if (!normalized) return null;
-  const value = Number(normalized);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value * 100);
+  const cents = parseBrlToCents(raw);
+  if (cents == null || cents <= 0) return null;
+  return cents;
 }
 
 function centsToInputValue(cents: number): string {
-  return (cents / 100).toFixed(2);
+  return formatCentsForBrInput(cents);
 }
 
 function formatBrl(cents: number): string {
@@ -80,7 +81,8 @@ export function NewPayableSheet({
   const parcelCents = parseAmountToCents(parcelAmount);
   const totalCents = parseAmountToCents(totalAmount);
   const canSubmitParcelado = totalCents != null && totalCents > 0;
-  const totalAmountForSubmit = totalCents != null ? centsToInputValue(totalCents) : '';
+  const totalAmountForSubmit =
+    totalCents != null ? normalizeMoneyFormValue(formatCentsForBrInput(totalCents)) : '';
 
   function syncFromParcel(raw: string, count: number) {
     setParcelAmount(raw);
@@ -187,7 +189,7 @@ export function NewPayableSheet({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="var-due">{isParcelado ? '1ª parcela' : 'Vencimento'}</Label>
-                <Input id="var-due" name="dueOn" type="date" required defaultValue={defaultDueOn} />
+                <DateInput id="var-due" name="dueOn" required defaultValue={defaultDueOn} />
               </div>
 
               <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -219,25 +221,21 @@ export function NewPayableSheet({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="grid gap-1.5">
                       <Label htmlFor="var-parcel">Valor da parcela (R$)</Label>
-                      <Input
+                      <MoneyInput
                         id="var-parcel"
-                        type="number"
-                        step="0.01"
                         min="0.01"
                         value={parcelAmount}
-                        onChange={(event) => syncFromParcel(event.target.value, installmentCount)}
+                        onValueChange={(value) => syncFromParcel(value, installmentCount)}
                         placeholder="Ex.: 200,00"
                       />
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="var-total">Valor total (R$)</Label>
-                      <Input
+                      <MoneyInput
                         id="var-total"
-                        type="number"
-                        step="0.01"
                         min="0.01"
                         value={totalAmount}
-                        onChange={(event) => syncFromTotal(event.target.value, installmentCount)}
+                        onValueChange={(value) => syncFromTotal(value, installmentCount)}
                         placeholder="Ex.: 800,00"
                       />
                     </div>
@@ -261,14 +259,7 @@ export function NewPayableSheet({
               ) : (
                 <div className="grid gap-1.5">
                   <Label htmlFor="var-amount">Valor (R$) — opcional</Label>
-                  <Input
-                    id="var-amount"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Opcional"
-                  />
+                  <MoneyInput id="var-amount" name="amount" min="0" placeholder="Opcional" />
                 </div>
               )}
 
@@ -313,11 +304,9 @@ export function NewPayableSheet({
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="fix-amount">Valor padrão (R$) — opcional</Label>
-                  <Input
+                  <MoneyInput
                     id="fix-amount"
                     name="defaultAmount"
-                    type="number"
-                    step="0.01"
                     min="0"
                     placeholder="Vazio = variável"
                   />

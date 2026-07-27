@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from 'react';
 import type { AmortizationSystem } from '@tim/domain';
+import { formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { nativeSelectClassName } from '@/components/page-header';
 import { runWithToast } from '@/lib/action-toast';
@@ -112,24 +115,21 @@ export function RebuildFinancingDialog({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`rf-first-${financing.id}`}>1º vencimento</Label>
-            <Input
+            <DateInput
               id={`rf-first-${financing.id}`}
               name="firstDueOn"
-              type="date"
               required
               defaultValue={financing.firstDueOn}
             />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`rf-principal-${financing.id}`}>Principal (R$)</Label>
-            <Input
+            <MoneyInput
               id={`rf-principal-${financing.id}`}
               name="principal"
-              type="number"
-              step="0.01"
               min="0.01"
               required
-              defaultValue={(financing.principalCents / 100).toFixed(2)}
+              defaultValue={formatCentsForBrInput(financing.principalCents)}
             />
           </div>
           <div className="grid gap-1.5">
@@ -147,30 +147,26 @@ export function RebuildFinancingDialog({
           {system === 'fixed' ? (
             <div className="grid gap-1.5 sm:col-span-2">
               <Label htmlFor={`rf-pmt-${financing.id}`}>Valor da parcela (R$)</Label>
-              <Input
+              <MoneyInput
                 id={`rf-pmt-${financing.id}`}
                 name="installmentAmount"
-                type="number"
-                step="0.01"
                 min="0.01"
                 required
-                defaultValue={(financing.installmentAmountCents / 100).toFixed(2)}
+                defaultValue={formatCentsForBrInput(financing.installmentAmountCents)}
               />
             </div>
           ) : (
             <div className="grid gap-1.5 sm:col-span-2">
               <Label htmlFor={`rf-rate-${financing.id}`}>Taxa a.a. (%)</Label>
-              <Input
+              <MoneyInput
                 id={`rf-rate-${financing.id}`}
                 name="annualRate"
-                type="number"
-                step="0.01"
                 min="0"
                 required
                 defaultValue={
                   financing.annualRateBps != null
-                    ? (financing.annualRateBps / 100).toFixed(2)
-                    : '12.5'
+                    ? formatCentsForBrInput(financing.annualRateBps)
+                    : '12,50'
                 }
               />
               <input type="hidden" name="installmentAmount" value="" />

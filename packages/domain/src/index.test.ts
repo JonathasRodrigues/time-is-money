@@ -3,7 +3,11 @@ import {
   addMonths,
   buildInstallmentSchedule,
   formatBrlFromCents,
+  formatCentsForBrInput,
   formatIsoDateBr,
+  maskBrDateInput,
+  parseBrDateToIso,
+  parseBrlToCents,
   rebuildRemainingSchedule,
   resolveEntities,
   simulateFixed,
@@ -18,6 +22,21 @@ describe('domain', () => {
 
   it('formats ISO date as dd/mm/yyyy', () => {
     expect(formatIsoDateBr('2026-07-25')).toBe('25/07/2026');
+  });
+
+  it('parses and formats BR money input', () => {
+    expect(formatCentsForBrInput(123456)).toBe('1234,56');
+    expect(parseBrlToCents('1.234,56')).toBe(123456);
+    expect(parseBrlToCents('1234,56')).toBe(123456);
+    expect(parseBrlToCents('1234.56')).toBe(123456);
+    expect(parseBrlToCents('')).toBeNull();
+  });
+
+  it('parses BR dates and masks input', () => {
+    expect(parseBrDateToIso('25/07/2026')).toBe('2026-07-25');
+    expect(parseBrDateToIso('31/02/2026')).toBeNull();
+    expect(maskBrDateInput('25072026')).toBe('25/07/2026');
+    expect(maskBrDateInput('2507')).toBe('25/07');
   });
 
   it('adds months without day overflow', () => {

@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { formatBrlFromCents } from '@tim/domain';
+import { formatBrlFromCents, formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { withActionToast } from '@/lib/action-toast';
 import {
@@ -100,14 +100,12 @@ export function IncomeReceiptBanner({
                   >
                     <input type="hidden" name="transactionId" value={item.id} />
                     <input type="hidden" name="paidOn" value={today} />
-                    <Input
+                    <MoneyInput
                       name="amount"
-                      type="number"
-                      step="0.01"
                       min="0.01"
                       required
                       placeholder="Valor"
-                      defaultValue={suggestion != null ? (suggestion / 100).toFixed(2) : ''}
+                      defaultValue={suggestion != null ? formatCentsForBrInput(suggestion) : ''}
                       className="h-8 w-28 bg-background"
                     />
                     <SubmitButton size="sm" pendingLabel="…">

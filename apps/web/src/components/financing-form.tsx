@@ -4,6 +4,7 @@ import {
   buildAmortizationSchedule,
   formatBrlFromCents,
   formatIsoDateBr,
+  parseBrlToCents,
   type AmortizationSummary,
   type AmortizationSystem,
 } from '@tim/domain';
@@ -12,8 +13,10 @@ import { CheckCircle2, Calculator } from 'lucide-react';
 import { createFinancingAction } from '@/server/actions';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -39,9 +42,9 @@ interface FinancingFormProps {
 }
 
 function parseMoneyToCents(raw: string): number | null {
-  const value = Number(raw.replace(',', '.'));
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value * 100);
+  const cents = parseBrlToCents(raw);
+  if (cents == null || cents <= 0) return null;
+  return cents;
 }
 
 const SYSTEM_HELP: Record<AmortizationSystem, string> = {
@@ -127,8 +130,9 @@ export function FinancingForm({
           installmentAmountCents: amountCents,
         });
       }
-      const annualRate = Number(rateAa.replace(',', '.'));
-      if (!Number.isFinite(annualRate) || annualRate < 0) return null;
+      const annualRateCents = parseBrlToCents(rateAa);
+      if (annualRateCents == null || annualRateCents < 0) return null;
+      const annualRate = annualRateCents / 100;
       return buildAmortizationSchedule({
         system,
         principalCents,
@@ -145,8 +149,12 @@ export function FinancingForm({
     if (!showCompare || system === 'fixed' || !firstDueOn) return null;
     const principalCents = parseMoneyToCents(principal);
     const installmentCount = Number(count);
-    const annualRate = Number(rateAa.replace(',', '.'));
-    if (!principalCents || !Number.isInteger(installmentCount) || !Number.isFinite(annualRate)) {
+    const annualRateCents = parseBrlToCents(rateAa);
+    if (!principalCents || !Number.isInteger(installmentCount) || annualRateCents == null) {
+      return null;
+    }
+    const annualRate = annualRateCents / 100;
+    if (!Number.isFinite(annualRate)) {
       return null;
     }
     const annualRateBps = Math.round(annualRate * 100);
@@ -226,16 +234,14 @@ export function FinancingForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="principal">Principal (R$)</Label>
-            <Input
+            <MoneyInput
               id="principal"
               name="principal"
-              type="number"
-              step="0.01"
               min="0.01"
               required
               value={principal}
-              onChange={(event) => {
-                setPrincipal(event.target.value);
+              onValueChange={(value) => {
+                setPrincipal(value);
                 setConfirmed(false);
               }}
             />
@@ -259,16 +265,14 @@ export function FinancingForm({
           {system === 'fixed' ? (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="installmentAmount">Valor da parcela (R$)</Label>
-              <Input
+              <MoneyInput
                 id="installmentAmount"
                 name="installmentAmount"
-                type="number"
-                step="0.01"
                 min="0.01"
                 required
                 value={installmentAmount}
-                onChange={(event) => {
-                  setInstallmentAmount(event.target.value);
+                onValueChange={(value) => {
+                  setInstallmentAmount(value);
                   setConfirmed(false);
                 }}
               />
@@ -276,16 +280,14 @@ export function FinancingForm({
           ) : (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="annualRate">Taxa a.a. (%)</Label>
-              <Input
+              <MoneyInput
                 id="annualRate"
                 name="annualRate"
-                type="number"
-                step="0.01"
                 min="0"
                 required
                 value={rateAa}
-                onChange={(event) => {
-                  setRateAa(event.target.value);
+                onValueChange={(value) => {
+                  setRateAa(value);
                   setConfirmed(false);
                 }}
               />
@@ -294,14 +296,13 @@ export function FinancingForm({
           )}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="firstDueOn">1º vencimento</Label>
-            <Input
+            <DateInput
               id="firstDueOn"
               name="firstDueOn"
-              type="date"
               required
               value={firstDueOn}
-              onChange={(event) => {
-                setFirstDueOn(event.target.value);
+              onValueChange={(value) => {
+                setFirstDueOn(value);
                 setConfirmed(false);
               }}
             />

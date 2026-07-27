@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import {
   ACCOUNT_KIND_LABEL,
   formatBrlFromCents,
+  formatCentsForBrInput,
   formatYieldLabel,
   YIELD_TYPE_LABEL,
   type AccountKind,
@@ -19,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
@@ -161,13 +163,11 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="balance">Saldo atual (R$)</Label>
-                <Input
+                <MoneyInput
                   id="balance"
                   name="balance"
-                  type="number"
-                  step="0.01"
                   min="0"
-                  defaultValue="0"
+                  defaultValue={formatCentsForBrInput(0)}
                 />
               </div>
               <div className="grid gap-1.5">
@@ -185,11 +185,9 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
               </div>
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label htmlFor="yieldValue">Valor do rendimento</Label>
-                <Input
+                <MoneyInput
                   id="yieldValue"
                   name="yieldValue"
-                  type="number"
-                  step="0.01"
                   min="0"
                   placeholder="100 = 100% CDI · 13,15 = 13,15% a.a."
                 />
@@ -244,12 +242,10 @@ export default async function AccountsSettingsPage(): Promise<React.ReactElement
                       className="flex items-center justify-end gap-1"
                     >
                       <input type="hidden" name="accountId" value={row.id} />
-                      <Input
+                      <MoneyInput
                         name="balance"
-                        type="number"
-                        step="0.01"
                         min="0"
-                        defaultValue={(row.balanceCents / 100).toFixed(2)}
+                        defaultValue={formatCentsForBrInput(row.balanceCents)}
                         className="h-8 w-28"
                       />
                       <SubmitButton size="sm" variant="outline" pendingLabel="…">

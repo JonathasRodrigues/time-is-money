@@ -1,11 +1,16 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { formatBrlFromCents, formatIsoDateBr, PAYABLE_KIND_LABEL } from '@tim/domain';
+import {
+  formatBrlFromCents,
+  formatCentsForBrInput,
+  formatIsoDateBr,
+  PAYABLE_KIND_LABEL,
+} from '@tim/domain';
 import type { PayableKind } from '@tim/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Table,
@@ -42,7 +47,7 @@ function payAmountCents(row: PayableRow): number | null {
 
 function amountInputDefault(row: PayableRow): string {
   const cents = payAmountCents(row);
-  return cents != null ? (cents / 100).toFixed(2) : '';
+  return cents != null ? formatCentsForBrInput(cents) : '';
 }
 
 export function PaymentsTable({
@@ -227,10 +232,8 @@ export function PaymentsTable({
                     <form className="flex flex-wrap items-center justify-end gap-1.5">
                       <input type="hidden" name="transactionId" value={row.id} />
                       <input type="hidden" name="paidOn" value={today} />
-                      <Input
+                      <MoneyInput
                         name="amount"
-                        type="number"
-                        step="0.01"
                         min="0"
                         placeholder="Valor"
                         defaultValue={amountInputDefault(row)}

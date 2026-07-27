@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import {
   Sheet,
   SheetContent,
@@ -137,18 +139,12 @@ export function NewTransactionSheet({
 
           <div className="grid gap-1.5">
             <Label htmlFor="new-amount">Valor (R$)</Label>
-            <Input id="new-amount" name="amount" type="number" step="0.01" min="0.01" required />
+            <MoneyInput id="new-amount" name="amount" min="0.01" required />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="new-date">{dateLabel}</Label>
-            <Input
-              id="new-date"
-              name="date"
-              type="date"
-              required
-              defaultValue={defaultOccurredOn}
-            />
+            <DateInput id="new-date" name="date" required defaultValue={defaultOccurredOn} />
             <p className={cn('text-xs text-muted-foreground')}>{dateHint}</p>
           </div>
 

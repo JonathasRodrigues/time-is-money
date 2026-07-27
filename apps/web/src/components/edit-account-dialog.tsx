@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { AccountKind, YieldType } from '@tim/domain';
+import { formatCentsForBrInput } from '@tim/domain';
 import { Pencil } from 'lucide-react';
 import { ActionForm } from '@/components/action-form';
 import { nativeSelectClassName } from '@/components/page-header';
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { updateAccountAction } from '@/server/actions';
 
@@ -48,7 +50,7 @@ export function EditAccountDialog({
   const [open, setOpen] = useState(false);
   const yieldValue =
     account.yieldType !== 'none' && account.yieldBps != null
-      ? (account.yieldBps / 100).toFixed(2)
+      ? formatCentsForBrInput(account.yieldBps)
       : '';
 
   return (
@@ -150,13 +152,11 @@ export function EditAccountDialog({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`edit-balance-${account.id}`}>Saldo atual (R$)</Label>
-            <Input
+            <MoneyInput
               id={`edit-balance-${account.id}`}
               name="balance"
-              type="number"
-              step="0.01"
               min="0"
-              defaultValue={(account.balanceCents / 100).toFixed(2)}
+              defaultValue={formatCentsForBrInput(account.balanceCents)}
             />
           </div>
           <div className="grid gap-1.5">
@@ -174,11 +174,9 @@ export function EditAccountDialog({
           </div>
           <div className="grid gap-1.5 sm:col-span-2">
             <Label htmlFor={`edit-yield-value-${account.id}`}>Valor do rendimento</Label>
-            <Input
+            <MoneyInput
               id={`edit-yield-value-${account.id}`}
               name="yieldValue"
-              type="number"
-              step="0.01"
               min="0"
               defaultValue={yieldValue}
               placeholder="100 = 100% CDI · 13,15 = 13,15% a.a."

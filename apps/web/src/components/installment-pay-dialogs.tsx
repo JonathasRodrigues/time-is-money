@@ -1,8 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { formatBrlFromCents, formatIsoDateBr } from '@tim/domain';
+import {
+  formatBrlFromCents,
+  formatCentsForBrInput,
+  formatIsoDateBr,
+  parseBrlToCents,
+} from '@tim/domain';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import {
   Dialog,
   DialogContent,
@@ -11,8 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { runWithToast } from '@/lib/action-toast';
 import { payInstallmentAction, payInstallmentsBulkAction } from '@/server/actions';
@@ -26,12 +32,6 @@ export interface FinancingInstallmentRow {
   interestCents: number;
   principalCents: number;
   paidOn: string | null;
-}
-
-function parseAmountToCents(raw: string): number | null {
-  const value = Number(raw.replace(',', '.'));
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value * 100);
 }
 
 function CategorySelect({
@@ -83,7 +83,7 @@ export function PayInstallmentsDialog({
     const nextAmounts: Record<string, string> = {};
     const nextPaidOns: Record<string, string> = {};
     for (const item of installments) {
-      nextAmounts[item.id] = (item.amountCents / 100).toFixed(2);
+      nextAmounts[item.id] = formatCentsForBrInput(item.amountCents);
       nextPaidOns[item.id] = item.dueOn;
     }
     setAmounts(nextAmounts);
@@ -94,8 +94,8 @@ export function PayInstallmentsDialog({
   const totalCents = useMemo(() => {
     let sum = 0;
     for (const item of installments) {
-      const cents = parseAmountToCents(amounts[item.id] ?? '');
-      if (cents == null) return null;
+      const cents = parseBrlToCents(amounts[item.id] ?? '');
+      if (cents == null || cents <= 0) return null;
       sum += cents;
     }
     return sum;
@@ -155,11 +155,10 @@ export function PayInstallmentsDialog({
                 Aplicar uma data em todas
               </Label>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <Input
+                <DateInput
                   id="pay-apply-all"
-                  type="date"
                   value={applyAllDate}
-                  onChange={(event) => setApplyAllDate(event.target.value)}
+                  onValueChange={setApplyAllDate}
                   className="h-9 flex-1 min-w-[10rem]"
                 />
                 <Button type="button" size="sm" variant="outline" onClick={applyDateToAll}>
@@ -184,30 +183,25 @@ export function PayInstallmentsDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1.5">
                     <Label htmlFor={`pay-amount-${item.id}`}>Valor pago (R$)</Label>
-                    <Input
+                    <MoneyInput
                       id={`pay-amount-${item.id}`}
                       name="amount"
-                      type="number"
-                      step="0.01"
                       min="0.01"
                       required
                       value={amounts[item.id] ?? ''}
-                      onChange={(event) => {
-                        const value = event.target.value;
+                      onValueChange={(value) => {
                         setAmounts((prev) => ({ ...prev, [item.id]: value }));
                       }}
                     />
                   </div>
                   <div className="grid gap-1.5">
                     <Label htmlFor={`pay-on-${item.id}`}>Pago em</Label>
-                    <Input
+                    <DateInput
                       id={`pay-on-${item.id}`}
                       name="paidOn"
-                      type="date"
                       required
                       value={paidOns[item.id] ?? item.dueOn}
-                      onChange={(event) => {
-                        const value = event.target.value;
+                      onValueChange={(value) => {
                         setPaidOns((prev) => ({ ...prev, [item.id]: value }));
                       }}
                     />
@@ -271,18 +265,24 @@ export function AmortizeSelectedDialog({
     return acc + principal;
   }, 0);
 
-  const [amountDraft, setAmountDraft] = useState((currentMonth.amountCents / 100).toFixed(2));
-  const [extraDraft, setExtraDraft] = useState((suggestedPrincipalCents / 100).toFixed(2));
+  const [amountDraft, setAmountDraft] = useState(formatCentsForBrInput(currentMonth.amountCents));
+  const [extraDraft, setExtraDraft] = useState(formatCentsForBrInput(suggestedPrincipalCents));
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
-    setAmountDraft((currentMonth.amountCents / 100).toFixed(2));
-    setExtraDraft((suggestedPrincipalCents / 100).toFixed(2));
+    setAmountDraft(formatCentsForBrInput(currentMonth.amountCents));
+    setExtraDraft(formatCentsForBrInput(suggestedPrincipalCents));
   }, [open, currentMonth.amountCents, suggestedPrincipalCents]);
 
-  const amountCents = useMemo(() => parseAmountToCents(amountDraft), [amountDraft]);
-  const extraCents = useMemo(() => parseAmountToCents(extraDraft), [extraDraft]);
+  const amountCents = useMemo(() => {
+    const cents = parseBrlToCents(amountDraft);
+    return cents != null && cents > 0 ? cents : null;
+  }, [amountDraft]);
+  const extraCents = useMemo(() => {
+    const cents = parseBrlToCents(extraDraft);
+    return cents != null && cents > 0 ? cents : null;
+  }, [extraDraft]);
   const totalCents = amountCents != null && extraCents != null ? amountCents + extraCents : null;
 
   return (
@@ -315,8 +315,6 @@ export function AmortizeSelectedDialog({
           className="grid gap-4"
         >
           <input type="hidden" name="installmentId" value={currentMonth.id} />
-          <input type="hidden" name="amount" value={amountDraft} />
-          <input type="hidden" name="extraAmortization" value={extraDraft} />
 
           <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -348,27 +346,25 @@ export function AmortizeSelectedDialog({
             <Label htmlFor={`pay-month-${currentMonth.id}`}>
               Parcela #{currentMonth.number} (R$)
             </Label>
-            <Input
+            <MoneyInput
               id={`pay-month-${currentMonth.id}`}
-              type="number"
-              step="0.01"
+              name="amount"
               min="0.01"
               required
               value={amountDraft}
-              onChange={(event) => setAmountDraft(event.target.value)}
+              onValueChange={setAmountDraft}
             />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor={`extra-bulk-${currentMonth.id}`}>Amortização antecipada (R$)</Label>
-            <Input
+            <MoneyInput
               id={`extra-bulk-${currentMonth.id}`}
-              type="number"
-              step="0.01"
+              name="extraAmortization"
               min="0.01"
               required
               value={extraDraft}
-              onChange={(event) => setExtraDraft(event.target.value)}
+              onValueChange={setExtraDraft}
             />
           </div>
 
@@ -381,10 +377,9 @@ export function AmortizeSelectedDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor={`amort-on-${currentMonth.id}`}>Pagar em</Label>
-            <Input
+            <DateInput
               id={`amort-on-${currentMonth.id}`}
               name="paidOn"
-              type="date"
               required
               defaultValue={currentMonth.dueOn}
             />

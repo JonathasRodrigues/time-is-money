@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyInput } from '@/components/ui/money-input';
 import {
   Sheet,
   SheetContent,
@@ -119,18 +121,16 @@ export function NewReceivableSheet({
                 <Label htmlFor="rec-date">
                   {alreadyReceived ? 'Data do recebimento' : 'Data prevista'}
                 </Label>
-                <Input id="rec-date" name="date" type="date" required defaultValue={defaultDate} />
+                <DateInput id="rec-date" name="date" required defaultValue={defaultDate} />
                 <p className="text-xs text-muted-foreground">
                   Pode ser uma data passada para lançamento retroativo.
                 </p>
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="rec-amount">Valor (R$)</Label>
-                <Input
+                <MoneyInput
                   id="rec-amount"
                   name="amount"
-                  type="number"
-                  step="0.01"
                   min="0.01"
                   required
                   placeholder="Ex.: 5000,00"
@@ -189,11 +189,9 @@ export function NewReceivableSheet({
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="inc-amount">Valor padrão (R$) — opcional</Label>
-                  <Input
+                  <MoneyInput
                     id="inc-amount"
                     name="defaultAmount"
-                    type="number"
-                    step="0.01"
                     min="0"
                     placeholder="Vazio = média"
                   />

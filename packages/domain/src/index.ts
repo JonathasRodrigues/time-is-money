@@ -115,12 +115,95 @@ export function formatBrlFromCents(cents: number): string {
   }).format(cents / 100);
 }
 
+/**
+ * Valor monetário para input (sem R$), com vírgula decimal.
+ * Ex.: 123456 → `"1234,56"`.
+ */
+export function formatCentsForBrInput(cents: number): string {
+  const negative = cents < 0;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const fraction = String(abs % 100).padStart(2, '0');
+  return `${negative ? '-' : ''}${whole},${fraction}`;
+}
+
+/**
+ * Interpreta valor digitado no padrão BR (`1.234,56` ou `1234,56`)
+ * ou US (`1234.56`). Retorna centavos ou `null` se inválido.
+ */
+export function parseBrlToCents(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const negative = trimmed.startsWith('-');
+  const body = negative ? trimmed.slice(1).trim() : trimmed;
+  if (!body) return null;
+
+  let normalized: string;
+  if (body.includes(',')) {
+    // BR: pontos = milhar, vírgula = decimal
+    normalized = body.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d+\.\d{1,2}$/.test(body)) {
+    // US decimal curto
+    normalized = body;
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(body)) {
+    // só milhares com ponto, sem decimal
+    normalized = body.replace(/\./g, '');
+  } else {
+    normalized = body.replace(/[^\d.]/g, '');
+  }
+
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return null;
+  const cents = Math.round(value * 100);
+  return negative ? -cents : cents;
+}
+
 /** Converte `YYYY-MM-DD` → `dd/mm/yyyy` para exibição. */
 export function formatIsoDateBr(isoDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   if (!match) return isoDate;
   const [, year, month, day] = match;
   return `${day}/${month}/${year}`;
+}
+
+/** Converte `dd/mm/yyyy` (com ou sem máscara parcial) → `YYYY-MM-DD`, ou `null`. */
+export function parseBrDateToIso(value: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+  if (year < 1000 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) {
+    return null;
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Máscara progressiva `dd/mm/yyyy` a partir de dígitos ou texto parcial. */
+export function maskBrDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/**
+ * Normaliza valor monetário de formulário para string com ponto decimal
+ * (`1234.56`), aceitando vírgula BR. Retorna `''` se vazio.
+ */
+export function normalizeMoneyFormValue(raw: string): string {
+  const cents = parseBrlToCents(raw);
+  if (cents == null) return '';
+  const negative = cents < 0;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const fraction = String(abs % 100).padStart(2, '0');
+  return `${negative ? '-' : ''}${whole}.${fraction}`;
 }
 
 export function addMonths(isoDate: string, months: number): string {

@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CalendarIcon } from 'lucide-react';
-import { type DateRange } from 'react-day-picker';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import { DateInput } from '@/components/ui/date-input';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { formatScopeDateBr, resolveDateRange, type PeriodKey } from '@/lib/scope-query';
@@ -32,15 +33,10 @@ function toIsoLocal(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function fromIsoLocal(iso: string): Date {
+function fromIsoLocal(iso: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return undefined;
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y!, (m ?? 1) - 1, d ?? 1);
-}
-
-function monthBoundsLocal(year: number, monthIndex: number): { from: string; to: string } {
-  const start = new Date(year, monthIndex, 1);
-  const end = new Date(year, monthIndex + 1, 0);
-  return { from: toIsoLocal(start), to: toIsoLocal(end) };
 }
 
 function labelForValue(value: FilterDateRangeValue): string {
@@ -71,22 +67,25 @@ export function FilterDateRangePicker({
     to: value.to,
   });
 
-  const selected = useMemo<DateRange | undefined>(
-    () => ({
-      from: fromIsoLocal(resolved.start),
-      to: fromIsoLocal(resolved.end),
-    }),
-    [resolved.start, resolved.end],
+  const [draftFrom, setDraftFrom] = useState(resolved.start);
+  const [draftTo, setDraftTo] = useState(resolved.end);
+  const [fromMonth, setFromMonth] = useState<Date>(
+    () => fromIsoLocal(resolved.start) ?? new Date(),
   );
-
-  const [draft, setDraft] = useState<DateRange | undefined>(selected);
-  const [month, setMonth] = useState<Date>(selected?.from ?? new Date());
+  const [toMonth, setToMonth] = useState<Date>(() => fromIsoLocal(resolved.end) ?? new Date());
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (next) {
-      setDraft(selected);
-      setMonth(selected?.from ?? new Date());
+      const current = resolveDateRange({
+        period: value.period,
+        from: value.from,
+        to: value.to,
+      });
+      setDraftFrom(current.start);
+      setDraftTo(current.end);
+      setFromMonth(fromIsoLocal(current.start) ?? new Date());
+      setToMonth(fromIsoLocal(current.end) ?? new Date());
     }
   }
 
@@ -95,21 +94,32 @@ export function FilterDateRangePicker({
     setOpen(false);
   }
 
-  function applyCustomRange(range: DateRange | undefined) {
-    if (!range?.from || !range.to) return;
-    onChange({
-      period: 'custom',
-      from: toIsoLocal(range.from),
-      to: toIsoLocal(range.to),
-    });
+  function applyCustom() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draftFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(draftTo)) {
+      return;
+    }
+    const from = draftFrom <= draftTo ? draftFrom : draftTo;
+    const to = draftFrom <= draftTo ? draftTo : draftFrom;
+    onChange({ period: 'custom', from, to });
     setOpen(false);
   }
 
-  function applyVisibleMonth() {
-    const bounds = monthBoundsLocal(month.getFullYear(), month.getMonth());
-    onChange({ period: 'custom', from: bounds.from, to: bounds.to });
-    setOpen(false);
+  function setFrom(iso: string) {
+    setDraftFrom(iso);
+    const date = fromIsoLocal(iso);
+    if (date) setFromMonth(date);
   }
+
+  function setTo(iso: string) {
+    setDraftTo(iso);
+    const date = fromIsoLocal(iso);
+    if (date) setToMonth(date);
+  }
+
+  const canApply = /^\d{4}-\d{2}-\d{2}$/.test(draftFrom) && /^\d{4}-\d{2}-\d{2}$/.test(draftTo);
+
+  const fromDate = fromIsoLocal(draftFrom);
+  const toDate = fromIsoLocal(draftTo);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -143,39 +153,60 @@ export function FilterDateRangePicker({
                 {preset.label}
               </Button>
             ))}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 justify-start px-2.5 text-xs sm:w-full"
-              onClick={applyVisibleMonth}
-            >
-              Mês no calendário
-            </Button>
           </div>
 
-          <div className="p-2 sm:p-3">
-            <Calendar
-              mode="range"
-              locale={ptBR}
-              numberOfMonths={1}
-              captionLayout="dropdown"
-              startMonth={new Date(2020, 0)}
-              endMonth={new Date(new Date().getFullYear() + 2, 11)}
-              month={month}
-              onMonthChange={setMonth}
-              selected={draft}
-              onSelect={(range) => {
-                setDraft(range);
-                if (range?.from && range.to) {
-                  applyCustomRange(range);
-                }
-              }}
-              defaultMonth={selected?.from}
-            />
-            <p className="mt-1 px-1 text-[11px] text-muted-foreground">
-              Escolha início e fim, ou use mês/ano no topo do calendário.
+          <div className="grid gap-3 p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              Período personalizado — um calendário para cada data
             </p>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-2 rounded-lg border bg-muted/20 p-2.5">
+                <Label htmlFor="filter-period-from" className="text-sm font-semibold">
+                  Início
+                </Label>
+                <DateInput id="filter-period-from" value={draftFrom} onValueChange={setFrom} />
+                <Calendar
+                  mode="single"
+                  locale={ptBR}
+                  captionLayout="dropdown"
+                  startMonth={new Date(2020, 0)}
+                  endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                  selected={fromDate}
+                  month={fromMonth}
+                  onMonthChange={setFromMonth}
+                  onSelect={(date) => {
+                    if (date) setFrom(toIsoLocal(date));
+                  }}
+                  className="mx-auto p-0"
+                />
+              </div>
+
+              <div className="grid gap-2 rounded-lg border bg-muted/20 p-2.5">
+                <Label htmlFor="filter-period-to" className="text-sm font-semibold">
+                  Fim
+                </Label>
+                <DateInput id="filter-period-to" value={draftTo} onValueChange={setTo} />
+                <Calendar
+                  mode="single"
+                  locale={ptBR}
+                  captionLayout="dropdown"
+                  startMonth={new Date(2020, 0)}
+                  endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                  selected={toDate}
+                  month={toMonth}
+                  onMonthChange={setToMonth}
+                  onSelect={(date) => {
+                    if (date) setTo(toIsoLocal(date));
+                  }}
+                  className="mx-auto p-0"
+                />
+              </div>
+            </div>
+
+            <Button type="button" size="sm" disabled={!canApply} onClick={applyCustom}>
+              Aplicar período
+            </Button>
           </div>
         </div>
       </PopoverContent>
