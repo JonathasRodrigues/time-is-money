@@ -381,6 +381,8 @@ export const userPreferences = pgTable(
     reminderWindowsDays: jsonb('reminder_windows_days').$type<number[]>().default([7, 3, 1]),
     weeklySummary: boolean('weekly_summary').notNull().default(false),
     ttsEnabled: boolean('tts_enabled').notNull().default(false),
+    /** Tema da UI: light | dark | system. */
+    theme: varchar('theme', { length: 16 }).notNull().default('system'),
     /** Dia do mês (1–28) em que costuma cair o recebimento (salário etc.). */
     incomeDay: integer('income_day'),
     /** Último mês (YYYY-MM) em que o usuário confirmou o recebimento. */

@@ -36,7 +36,7 @@ export default async function PreferencesPage(): Promise<React.ReactElement> {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Preferências"
-        description="Notificações, defaults e comportamento do Jarvis."
+        description="Notificações, aparência, defaults e comportamento do Jarvis."
       />
       <Card className="max-w-2xl">
         <CardHeader>
@@ -94,6 +94,29 @@ export default async function PreferencesPage(): Promise<React.ReactElement> {
                   defaultValue={prefs?.incomeDay ?? ''}
                   className="max-w-[8rem]"
                 />
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Aparência</p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="theme">Tema</Label>
+                <select
+                  id="theme"
+                  name="theme"
+                  className={nativeSelectClassName}
+                  defaultValue={
+                    prefs?.theme === 'light' || prefs?.theme === 'dark' || prefs?.theme === 'system'
+                      ? prefs.theme
+                      : 'system'
+                  }
+                >
+                  <option value="system">Sistema</option>
+                  <option value="light">Claro</option>
+                  <option value="dark">Escuro</option>
+                </select>
               </div>
             </div>
 

@@ -45,6 +45,7 @@ import {
   createTransactionSchema,
   createTransferSchema,
   notificationPrefsSchema,
+  themePreferenceSchema,
   payTransactionSchema,
   transactionTypeSchema,
   updateAccountBalanceSchema,
@@ -776,6 +777,9 @@ export async function updatePreferencesAction(formData: FormData) {
       .filter((n) => !Number.isNaN(n)),
     weeklySummary: formData.get('weeklySummary') === 'on',
   });
+  const theme = themePreferenceSchema.parse(
+    String(formData.get('theme') || 'system').trim() || 'system',
+  );
   const incomeDayRaw = String(formData.get('incomeDay') || '').trim();
   const incomeDay =
     incomeDayRaw === '' ? null : Math.min(28, Math.max(1, Math.floor(Number(incomeDayRaw))));
@@ -787,6 +791,7 @@ export async function updatePreferencesAction(formData: FormData) {
       reminderWindowsDays: prefs.windowsDays,
       weeklySummary: prefs.weeklySummary ?? false,
       ttsEnabled: formData.get('ttsEnabled') === 'on',
+      theme,
       incomeDay: Number.isFinite(incomeDay) ? incomeDay : null,
       defaultCostCenterId: formData.get('defaultCostCenterId')
         ? String(formData.get('defaultCostCenterId'))
@@ -803,4 +808,21 @@ export async function updatePreferencesAction(formData: FormData) {
       ),
     );
   revalidateApp();
+}
+
+/** Atualiza só o tema (toggle da sidebar). */
+export async function updateThemePreferenceAction(themeRaw: string) {
+  const session = await getAuthSession();
+  if (!session?.householdId) return;
+  const theme = themePreferenceSchema.parse(themeRaw);
+  const db = getDb();
+  await db
+    .update(userPreferences)
+    .set({ theme, updatedAt: new Date() })
+    .where(
+      and(
+        eq(userPreferences.householdId, session.householdId),
+        eq(userPreferences.userId, session.userId),
+      ),
+    );
 }

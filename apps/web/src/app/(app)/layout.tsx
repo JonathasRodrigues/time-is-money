@@ -15,6 +15,8 @@ import { ensureSeriesInstancesForMonth } from '@tim/application';
 import { AppShell } from '@/components/app-shell';
 import { shouldUseClerk } from '@/components/auth-shell';
 import { IncomeReceiptBanner } from '@/components/income-receipt-banner';
+import { ThemeSync } from '@/components/theme-sync';
+import type { AppTheme } from '@/components/theme-provider';
 import { createAppContext } from '@/server/context';
 import { getAuthSession, getDb } from '@/server/db';
 
@@ -48,6 +50,7 @@ export default async function AppLayout({
   const userLabel = demo ? 'Você (Admin)' : (userEmail.split('@')[0] ?? 'Usuário');
 
   let ttsEnabled = false;
+  let themePreference: AppTheme = 'system';
   let incomeDay: number | null = null;
   let showGenericIncomePrompt = false;
   let pendingIncomes: Array<{
@@ -77,6 +80,9 @@ export default async function AppLayout({
       .limit(1);
     ttsEnabled = prefs?.ttsEnabled ?? false;
     incomeDay = prefs?.incomeDay ?? null;
+    if (prefs?.theme === 'light' || prefs?.theme === 'dark' || prefs?.theme === 'system') {
+      themePreference = prefs.theme;
+    }
 
     try {
       const ctx = await createAppContext();
@@ -158,20 +164,23 @@ export default async function AppLayout({
   const canManageMembers = session ? can(session, 'members.manage') : false;
 
   return (
-    <AppShell
-      demo={demo}
-      userEmail={userEmail}
-      userLabel={userLabel}
-      ttsEnabled={ttsEnabled}
-      canManageMembers={canManageMembers}
-    >
-      {showBanner ? (
-        <IncomeReceiptBanner
-          incomeDay={incomeDay}
-          pendingIncomes={showSeriesIncomePrompt ? pendingIncomes : []}
-        />
-      ) : null}
-      {children}
-    </AppShell>
+    <>
+      <ThemeSync preference={themePreference} />
+      <AppShell
+        demo={demo}
+        userEmail={userEmail}
+        userLabel={userLabel}
+        ttsEnabled={ttsEnabled}
+        canManageMembers={canManageMembers}
+      >
+        {showBanner ? (
+          <IncomeReceiptBanner
+            incomeDay={incomeDay}
+            pendingIncomes={showSeriesIncomePrompt ? pendingIncomes : []}
+          />
+        ) : null}
+        {children}
+      </AppShell>
+    </>
   );
 }

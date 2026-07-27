@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { JarvisDock } from '@/components/jarvis-dock';
 import { BrandLogo } from '@/components/brand-logo';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { NavigatingContent } from '@/components/navigating-content';
 import { NavigatingProvider } from '@/components/navigating';
 import { NavigationProgress } from '@/components/navigation-progress';
@@ -283,7 +284,13 @@ function AppShellFrame({
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-3">
+        <SidebarFooter className="gap-2 p-3">
+          <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:justify-center">
+            <p className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+              Aparência
+            </p>
+            <ThemeToggle />
+          </div>
           <PwaInstallPrompt />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

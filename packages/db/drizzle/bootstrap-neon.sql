@@ -296,3 +296,6 @@ ALTER TABLE "account_transfers" ADD CONSTRAINT "account_transfers_from_account_i
 ALTER TABLE "account_transfers" ADD CONSTRAINT "account_transfers_to_account_id_accounts_id_fk" FOREIGN KEY ("to_account_id") REFERENCES "public"."accounts"("id") ON DELETE restrict ON UPDATE no action;
 CREATE INDEX IF NOT EXISTS "account_transfers_household_occurred_idx" ON "account_transfers" ("household_id","occurred_on");
 
+
+-- ===== 0009_theme.sql =====
+ALTER TABLE "user_preferences" ADD COLUMN IF NOT EXISTS "theme" varchar(16) DEFAULT 'system' NOT NULL;

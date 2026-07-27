@@ -3,6 +3,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { IBM_Plex_Sans } from 'next/font/google';
 import { shouldUseClerk } from '@/components/auth-shell';
 import { RegisterServiceWorker } from '@/components/register-sw';
+import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import './globals.css';
@@ -33,7 +34,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#152033',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f6f7f9' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f1c2e' },
+  ],
   width: 'device-width',
   initialScale: 1,
 };
@@ -44,7 +48,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>): Promise<React.ReactElement> {
   const useClerk = shouldUseClerk();
-  const content = (
+
+  const inner = (
     <TooltipProvider>
       <RegisterServiceWorker />
       {children}
@@ -53,22 +58,20 @@ export default async function RootLayout({
     </TooltipProvider>
   );
 
-  if (!useClerk) {
-    return (
-      <html lang="pt-BR">
-        <body className={`${sans.variable} font-sans antialiased`}>{content}</body>
-      </html>
-    );
-  }
-
-  const { ClerkProvider } = await import('@clerk/nextjs');
-  const { shadcn } = await import('@clerk/ui/themes');
-
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className={`${sans.variable} font-sans antialiased`}>
-        <ClerkProvider appearance={{ theme: shadcn }}>{content}</ClerkProvider>
+        <ThemeProvider>{useClerk ? <ClerkShell>{inner}</ClerkShell> : inner}</ThemeProvider>
       </body>
     </html>
   );
+}
+
+async function ClerkShell({
+  children,
+}: {
+  children: React.ReactNode;
+}): Promise<React.ReactElement> {
+  const { ClerkThemeProvider } = await import('@/components/clerk-theme-provider');
+  return <ClerkThemeProvider>{children}</ClerkThemeProvider>;
 }

@@ -106,12 +106,7 @@ export function JarvisChat({
   ];
 
   return (
-    <div
-      className={cn(
-        'flex h-full min-h-0 flex-col bg-[linear-gradient(180deg,#eef2f6_0%,#f7f8fa_48%,#eef2f6_100%)]',
-        className,
-      )}
-    >
+    <div className={cn('flex h-full min-h-0 flex-col bg-muted/40', className)}>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-3">
           {messages.map((msg, idx) => (

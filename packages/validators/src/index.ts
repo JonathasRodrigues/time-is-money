@@ -386,6 +386,8 @@ export const notificationPrefsSchema = z.object({
   weeklySummary: z.boolean().optional(),
 });
 
+export const themePreferenceSchema = z.enum(['light', 'dark', 'system']);
+
 export const importColumnMappingSchema = z.object({
   occurredOn: z.string().min(1),
   amount: z.string().min(1),
@@ -475,6 +477,7 @@ export type RebuildFinancingInput = z.infer<typeof rebuildFinancingSchema>;
 export type SoftDeleteFinancingInput = z.infer<typeof softDeleteFinancingSchema>;
 export type SoftDeleteTransactionInput = z.infer<typeof softDeleteTransactionSchema>;
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
+export type ThemePreference = z.infer<typeof themePreferenceSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
 export type ImportPreviewRowUpdate = z.infer<typeof importPreviewRowUpdateSchema>;
 export type UpdateImportPreviewInput = z.infer<typeof updateImportPreviewSchema>;
