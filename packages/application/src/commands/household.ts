@@ -21,7 +21,7 @@ export async function createHousehold(
       role: 'admin',
     });
 
-    await seedHouseholdDefaults(tx as AppContext['db'], household.id);
+    await seedHouseholdDefaults(tx, household.id);
 
     await tx.insert(userPreferences).values({
       householdId: household.id,

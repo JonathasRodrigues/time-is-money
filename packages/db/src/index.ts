@@ -10,6 +10,9 @@ type NeonDb = ReturnType<typeof drizzleNeon<typeof schema>>;
 
 export type Database = PostgresDb | NeonDb;
 
+/** Database client or an open transaction (for seeds / multi-step writes). */
+export type DbClient = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
 const globalForDb = globalThis as typeof globalThis & {
   __timPostgres?: PostgresClient;
   __timNeonPool?: Pool;

@@ -4,10 +4,10 @@ import {
   DEFAULT_INCOME_CATEGORIES,
 } from '@tim/domain';
 import { eq } from 'drizzle-orm';
-import type { Database } from './index';
+import type { DbClient } from './index';
 import { accounts, categories, categoryAliases, costCenters } from './schema/index';
 
-export async function seedHouseholdDefaults(db: Database, householdId: string): Promise<void> {
+export async function seedHouseholdDefaults(db: DbClient, householdId: string): Promise<void> {
   const existingCenters = await db
     .select()
     .from(costCenters)
