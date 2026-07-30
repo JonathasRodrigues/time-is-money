@@ -1,6 +1,7 @@
 import { requireCapability, requireSession } from '@tim/auth';
 import {
   accounts,
+  auditLogs,
   categories,
   categoryAliases,
   costCenters,
@@ -9,7 +10,11 @@ import {
   importJobs,
   transactions,
 } from '@tim/db';
-import { resolveEntities, type ResolveContext } from '@tim/domain';
+import {
+  paymentMethodMovesAccountBalance,
+  resolveEntities,
+  type ResolveContext,
+} from '@tim/domain';
 import {
   autoMapColumns,
   buildExportCsv,
@@ -26,17 +31,9 @@ import {
   type ParsedImportRow,
 } from '@tim/imex';
 import { updateImportPreviewSchema, type UpdateImportPreviewInput } from '@tim/validators';
-import { and, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import type { AppContext } from '../context.js';
-
-async function runCreateTransaction(
-  ctx: AppContext,
-  input: Parameters<typeof import('../index.js').createTransaction>[1],
-  source: Parameters<typeof import('../index.js').createTransaction>[2],
-): Promise<void> {
-  const { createTransaction } = await import('../index.js');
-  await createTransaction(ctx, input, source);
-}
 
 export type ImportPreviewEntityOption = { id: string; name: string; type?: string };
 
@@ -212,6 +209,27 @@ function pickFallbackCategoryId(
   });
   return preferred?.id ?? sameType[0]?.id ?? null;
 }
+
+/** Preferência: Pessoa Física; senão o primeiro centro do household. */
+function pickFallbackCostCenterId(context: ResolveContext): string | null {
+  const pessoaFisica = context.costCenters.find((c) => normalizeName(c.name) === 'pessoa fisica');
+  return pessoaFisica?.id ?? context.costCenters[0]?.id ?? null;
+}
+
+function importDuplicateHash(input: {
+  occurredOn: string;
+  amountCents: number;
+  description?: string;
+  accountId: string;
+}): string {
+  return createHash('sha256')
+    .update(
+      `${input.occurredOn}|${input.amountCents}|${input.description ?? ''}|${input.accountId}`,
+    )
+    .digest('hex');
+}
+
+const IMPORT_INSERT_CHUNK = 150;
 
 export function downloadImportTemplate(ctx: AppContext): { csv: string } {
   const session = requireSession(ctx.session);
@@ -455,8 +473,24 @@ export async function commitImport(
 
   const rows = await ctx.db.select().from(importJobRows).where(eq(importJobRows.jobId, jobId));
   const resolveContext = await buildResolveContext(ctx, session.householdId);
+  const defaultCostCenterId = pickFallbackCostCenterId(resolveContext);
+  const validAccountIds = new Set(resolveContext.accounts.map((a) => a.id));
 
-  let created = 0;
+  type ReadyRow = {
+    rowId: string;
+    costCenterId: string;
+    categoryId: string;
+    accountId: string;
+    type: 'income' | 'expense';
+    amountCents: number;
+    occurredOn: string;
+    description?: string;
+    tags?: string[];
+  };
+
+  const toInsert: ReadyRow[] = [];
+  const skipRowIds: string[] = [];
+  const errorUpdates: Array<{ id: string; reason: string }> = [];
   let skipped = 0;
   let errors = 0;
 
@@ -473,10 +507,7 @@ export async function commitImport(
     const payload = row.payload as Partial<ParsedImportRow>;
     if (!payload.occurredOn || !payload.amountCents || !payload.type || payload.amountCents <= 0) {
       errors += 1;
-      await ctx.db
-        .update(importJobRows)
-        .set({ status: 'error', reason: 'Payload incompleto' })
-        .where(eq(importJobRows.id, row.id));
+      errorUpdates.push({ id: row.id, reason: 'Payload incompleto' });
       continue;
     }
 
@@ -489,49 +520,96 @@ export async function commitImport(
       resolveContext,
     );
 
-    const costCenterId = resolved.costCenterId ?? resolveContext.costCenters[0]?.id ?? null;
+    const costCenterId = resolved.costCenterId ?? defaultCostCenterId;
     const accountId = resolved.accountId ?? resolveContext.accounts[0]?.id ?? null;
-    let categoryId = resolved.categoryId;
-    if (!categoryId) {
-      categoryId = pickFallbackCategoryId(resolveContext, payload.type);
-    }
+    const categoryId = resolved.categoryId ?? pickFallbackCategoryId(resolveContext, payload.type);
 
-    if (!categoryId || !costCenterId || !accountId) {
+    if (!categoryId || !costCenterId || !accountId || !validAccountIds.has(accountId)) {
       skipped += 1;
-      await ctx.db
-        .update(importJobRows)
-        .set({ status: 'skip', reason: 'Não foi possível resolver entidades' })
-        .where(eq(importJobRows.id, row.id));
+      skipRowIds.push(row.id);
       continue;
     }
 
-    try {
-      await runCreateTransaction(
-        ctx,
-        {
-          householdId: session.householdId,
-          costCenterId,
-          categoryId,
-          accountId,
-          type: payload.type,
-          amountCents: payload.amountCents,
-          occurredOn: payload.occurredOn,
-          description: payload.description,
-          tags: payload.tags,
-        },
-        'import',
-      );
-      created += 1;
-    } catch (error) {
-      errors += 1;
-      await ctx.db
-        .update(importJobRows)
-        .set({
-          status: 'error',
-          reason: error instanceof Error ? error.message : 'Erro ao criar',
-        })
-        .where(eq(importJobRows.id, row.id));
+    toInsert.push({
+      rowId: row.id,
+      costCenterId,
+      categoryId,
+      accountId,
+      type: payload.type,
+      amountCents: payload.amountCents,
+      occurredOn: payload.occurredOn,
+      description: payload.description,
+      tags: payload.tags,
+    });
+  }
+
+  const balanceDeltaByAccount = new Map<string, number>();
+  const movesBalance = paymentMethodMovesAccountBalance({
+    type: 'account',
+    paymentRail: 'pix',
+  });
+
+  for (let i = 0; i < toInsert.length; i += IMPORT_INSERT_CHUNK) {
+    const chunk = toInsert.slice(i, i + IMPORT_INSERT_CHUNK);
+    await ctx.db.insert(transactions).values(
+      chunk.map((row) => ({
+        householdId: session.householdId,
+        costCenterId: row.costCenterId,
+        categoryId: row.categoryId,
+        accountId: row.accountId,
+        type: row.type,
+        status: 'paid' as const,
+        amountCents: row.amountCents,
+        occurredOn: row.occurredOn,
+        dueOn: row.occurredOn,
+        paidOn: row.occurredOn,
+        description: row.description,
+        tags: row.tags ?? [],
+        source: 'import',
+        duplicateHash: importDuplicateHash({
+          occurredOn: row.occurredOn,
+          amountCents: row.amountCents,
+          description: row.description,
+          accountId: row.accountId,
+        }),
+        createdBy: session.userId,
+      })),
+    );
+
+    if (movesBalance) {
+      for (const row of chunk) {
+        const delta = row.type === 'expense' ? -row.amountCents : row.amountCents;
+        balanceDeltaByAccount.set(
+          row.accountId,
+          (balanceDeltaByAccount.get(row.accountId) ?? 0) + delta,
+        );
+      }
     }
+  }
+
+  for (const [accountId, delta] of balanceDeltaByAccount) {
+    if (delta === 0) continue;
+    await ctx.db
+      .update(accounts)
+      .set({
+        balanceCents: sql`${accounts.balanceCents} + ${delta}`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(accounts.id, accountId), eq(accounts.householdId, session.householdId)));
+  }
+
+  if (skipRowIds.length > 0) {
+    await ctx.db
+      .update(importJobRows)
+      .set({ status: 'skip', reason: 'Não foi possível resolver entidades' })
+      .where(inArray(importJobRows.id, skipRowIds));
+  }
+
+  for (const err of errorUpdates) {
+    await ctx.db
+      .update(importJobRows)
+      .set({ status: 'error', reason: err.reason })
+      .where(eq(importJobRows.id, err.id));
   }
 
   await ctx.db
@@ -539,5 +617,19 @@ export async function commitImport(
     .set({ status: 'completed', completedAt: new Date() })
     .where(eq(importJobs.id, jobId));
 
-  return { created, skipped, errors };
+  await ctx.db.insert(auditLogs).values({
+    householdId: session.householdId,
+    userId: session.userId,
+    action: 'import.commit',
+    resourceType: 'import_job',
+    resourceId: jobId,
+    source: 'import',
+    metadata: {
+      created: toInsert.length,
+      skipped,
+      errors,
+    },
+  });
+
+  return { created: toInsert.length, skipped, errors };
 }
