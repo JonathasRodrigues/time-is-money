@@ -71,6 +71,14 @@ async function demoSession(): Promise<AuthSession | null> {
   return getDemoSession(membership.householdId);
 }
 
+/** Clerk só precisa de URL/headers/cookies — não pode consumir o body (Hono/Next no Node). */
+function requestForClerkAuth(request: Request): Request {
+  return new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+  });
+}
+
 /** Resolves session from Bearer JWT or Clerk cookie (web proxy). */
 export async function getAuthSession(request: Request): Promise<AuthSession | null> {
   if (isDemoMode()) {
@@ -103,9 +111,9 @@ export async function getAuthSession(request: Request): Promise<AuthSession | nu
   }
 
   const clerk = createClerkClient({ secretKey });
-  const requestState = await clerk.authenticateRequest(request, {
+  const requestState = await clerk.authenticateRequest(requestForClerkAuth(request), {
     publishableKey,
-    authorizedParties: undefined,
+    authorizedParties: env.APP_BASE_URL ? [env.APP_BASE_URL.replace(/\/$/, '')] : undefined,
   });
 
   if (!requestState.isSignedIn) {
