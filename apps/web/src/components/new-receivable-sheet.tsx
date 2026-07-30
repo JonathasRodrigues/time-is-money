@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { parseBrlToCents } from '@tim/domain';
+import {
+  dueOnForMonth,
+  formatIsoDateBr,
+  parseBrlToCents,
+  shiftYearMonth,
+  yearMonthFromIso,
+} from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
@@ -23,6 +29,12 @@ import { ActionForm } from '@/components/action-form';
 import { createMonthlySeriesAction, createReceivableAction } from '@/lib/api/mutations';
 
 type ReceivableFormKind = 'one_off' | 'monthly';
+
+const MONTH_LABEL = new Intl.DateTimeFormat('pt-BR', {
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
 
 const KIND_META: Record<
   ReceivableFormKind,
@@ -53,6 +65,59 @@ function formatBrl(cents: number): string {
   }).format(cents / 100);
 }
 
+function monthLabelFromIso(isoDate: string): string {
+  const label = MONTH_LABEL.format(new Date(`${isoDate}T12:00:00.000Z`));
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function buildScheduleDates(startIso: string, count: number): string[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startIso) || count < 1) return [];
+  const startYm = yearMonthFromIso(startIso);
+  const dueDay = Math.min(28, Math.max(1, Number(startIso.slice(8, 10)) || 1));
+  return Array.from({ length: count }, (_, index) =>
+    dueOnForMonth(shiftYearMonth(startYm, index), dueDay),
+  );
+}
+
+function SchedulePreview({
+  dates,
+  amountCents,
+  alreadyReceived,
+}: {
+  dates: string[];
+  amountCents: number | null;
+  alreadyReceived: boolean;
+}): React.ReactElement | null {
+  if (dates.length < 2) return null;
+
+  return (
+    <div className="grid gap-1.5">
+      <p className="text-xs font-medium text-muted-foreground">
+        {dates.length} meses · {alreadyReceived ? 'pagos no extrato' : 'a receber'}
+      </p>
+      <ul className="max-h-44 overflow-y-auto rounded-md border bg-background/80 px-2 py-1.5 text-xs">
+        {dates.map((iso, index) => (
+          <li
+            key={iso}
+            className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 last:border-b-0"
+          >
+            <span className="min-w-0 truncate">
+              <span className="tabular-nums text-muted-foreground">{index + 1}.</span>{' '}
+              <span className="font-medium">{monthLabelFromIso(iso)}</span>
+              <span className="text-muted-foreground"> · {formatIsoDateBr(iso)}</span>
+            </span>
+            {amountCents != null ? (
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {formatBrl(amountCents)}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function NewReceivableSheet({
   centers,
   incomeCategories,
@@ -70,14 +135,31 @@ export function NewReceivableSheet({
   const [alreadyReceived, setAlreadyReceived] = useState(true);
   const [repeatMonths, setRepeatMonths] = useState(false);
   const [monthCount, setMonthCount] = useState(12);
+  const [startDate, setStartDate] = useState(defaultDate);
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [materializeYear, setMaterializeYear] = useState(true);
+  const [dueDay, setDueDay] = useState(5);
   const meta = KIND_META[kind];
 
   const monthlyCents = parseAmountToCents(monthlyAmount);
   const effectiveMonths = repeatMonths ? Math.max(2, Math.min(48, monthCount)) : 1;
   const scheduleTotalCents =
     monthlyCents != null && effectiveMonths > 1 ? monthlyCents * effectiveMonths : null;
+
+  const scheduleDates = useMemo(
+    () => (effectiveMonths > 1 ? buildScheduleDates(startDate, effectiveMonths) : []),
+    [effectiveMonths, startDate],
+  );
+
+  const seriesMaterializeDates = useMemo(() => {
+    if (!materializeYear) return [];
+    const now = new Date();
+    const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const day = Math.min(28, Math.max(1, dueDay || 5));
+    return Array.from({ length: 12 }, (_, index) =>
+      dueOnForMonth(shiftYearMonth(currentMonth, index), day),
+    );
+  }, [dueDay, materializeYear]);
 
   const oneOffSuccess = useMemo(() => {
     if (effectiveMonths > 1) {
@@ -161,7 +243,13 @@ export function NewReceivableSheet({
                       ? 'Data do recebimento'
                       : 'Data prevista'}
                 </Label>
-                <DateInput id="rec-date" name="date" required defaultValue={defaultDate} />
+                <DateInput
+                  id="rec-date"
+                  name="date"
+                  required
+                  value={startDate}
+                  onValueChange={setStartDate}
+                />
                 <p className="text-xs text-muted-foreground">
                   {effectiveMonths > 1
                     ? 'As demais datas avançam um mês a cada parcela (ex.: 3, 6 ou 12 meses).'
@@ -208,21 +296,23 @@ export function NewReceivableSheet({
                   Gerar vários meses (parcial ou ano todo)
                 </label>
                 {repeatMonths ? (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="rec-months">Quantidade de meses</Label>
-                    <Input
-                      id="rec-months"
-                      type="number"
-                      min={2}
-                      max={48}
-                      value={monthCount}
-                      onChange={(event) => setMonthCount(Number(event.target.value) || 12)}
+                  <div className="grid gap-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="rec-months">Quantidade de meses</Label>
+                      <Input
+                        id="rec-months"
+                        type="number"
+                        min={2}
+                        max={48}
+                        value={monthCount}
+                        onChange={(event) => setMonthCount(Number(event.target.value) || 12)}
+                      />
+                    </div>
+                    <SchedulePreview
+                      dates={scheduleDates}
+                      amountCents={monthlyCents}
+                      alreadyReceived={alreadyReceived}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      {alreadyReceived
-                        ? `Cria ${effectiveMonths} lançamentos pagos no extrato (mesmo valor).`
-                        : `Cria ${effectiveMonths} itens em Contas a receber com o mesmo valor.`}
-                    </p>
                   </div>
                 ) : null}
               </div>
@@ -271,7 +361,8 @@ export function NewReceivableSheet({
                     min={1}
                     max={28}
                     required
-                    defaultValue={5}
+                    value={dueDay}
+                    onChange={(event) => setDueDay(Number(event.target.value) || 5)}
                   />
                 </div>
                 <div className="grid gap-1.5">
@@ -293,10 +384,18 @@ export function NewReceivableSheet({
                 />
                 Materializar 12 meses a partir de agora
               </label>
-              <p className="text-xs text-muted-foreground">
-                Sem isso, só o mês atual e o próximo entram na fila; o restante aparece ao navegar o
-                calendário.
-              </p>
+              {materializeYear ? (
+                <SchedulePreview
+                  dates={seriesMaterializeDates}
+                  amountCents={null}
+                  alreadyReceived={false}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Sem isso, só o mês atual e o próximo entram na fila; o restante aparece ao navegar
+                  o calendário.
+                </p>
+              )}
               <CenterCategoryAccountFields
                 prefix="inc"
                 centers={centers}
