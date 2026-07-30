@@ -62,7 +62,12 @@ function ok() {
 }
 
 function followRedirect(result: { redirectTo?: string }) {
-  return jsonOk(parseWithSchema(okWithRedirectResponseSchema, { ok: true as const, ...result }));
+  return jsonOk(
+    parseWithSchema(okWithRedirectResponseSchema, {
+      ok: true as const,
+      redirectTo: result.redirectTo,
+    }),
+  );
 }
 
 async function requireAuthenticatedContext(request: Request) {
@@ -130,8 +135,8 @@ integrationRoutes.patch('/members/:membershipId/role', (c) =>
     await updateMemberRole(
       ctx,
       updateMemberRoleSchema.parse({
-        ...body,
         membershipId: c.req.param('membershipId'),
+        role: body.role,
       }),
     );
     return ok();
