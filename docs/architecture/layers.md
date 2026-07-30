@@ -2,7 +2,15 @@
 
 Separação inspirada em Clean Architecture / SOLID. Dependências fluem **de fora para dentro**.
 
-## Camada 1 — Apresentação (`apps/web`)
+## Camada 1 — API (`apps/api`)
+
+**Caminho:** `/home/flaesh/time-is-money/apps/api`
+
+- Hono + `@hono/node-server` na porta `3001` (dev)
+- Handlers `/api/v1/*` — auth, parse Zod, `@tim/application`
+- Clerk: cookie (via rewrite da web) ou Bearer JWT (RN)
+
+## Camada 2 — Apresentação web (`apps/web`)
 
 **Caminho:** `/home/flaesh/time-is-money/apps/web`
 
@@ -10,12 +18,15 @@ Responsabilidades:
 
 - Páginas App Router (`src/app/`)
 - Componentes React (`src/components/`)
-- Server actions (`src/server/*.ts`) — finas, sem lógica de negócio pesada
+- Route Handlers REST `/api/v1/*` — Hono (`@tim/api`) embutido via `app/api/v1/[[...route]]` na Vercel; em dev pode haver rewrite para `API_URL` (porta 3001).
+- Server actions (`src/server/*.ts`) — bridge legado na web; mutações novas preferir `/api/v1`
 - Middleware Clerk, env (`src/env.ts`), cron routes
 
 **Não deve:** conter regras de domínio, SQL direto complexo ou bypass de auth.
 
-## Camada 2 — Aplicação (`@tim/application`)
+Contrato HTTP compartilhado (web + React Native): `@tim/api-contract` — ver [`docs/api/`](../api/README.md).
+
+## Camada 3 — Aplicação (`@tim/application`)
 
 **Caminho:** `/home/flaesh/time-is-money/packages/application`
 
@@ -32,7 +43,7 @@ Casos de uso transacionais:
 - Criptografa campos sensíveis via `@tim/crypto`
 - Grava audit log
 
-## Camada 3 — Domínio (`@tim/domain`)
+## Camada 4 — Domínio (`@tim/domain`)
 
 **Caminho:** `/home/flaesh/time-is-money/packages/domain`
 
@@ -42,7 +53,7 @@ Funções puras, zero I/O:
 - `buildInstallmentSchedule`, `formatBrlFromCents`
 - Constantes de seed (`DEFAULT_EXPENSE_CATEGORIES`, aliases)
 
-## Camada 4 — Infraestrutura
+## Camada 5 — Infraestrutura
 
 | Pacote             | Função                                        |
 | ------------------ | --------------------------------------------- |
@@ -56,7 +67,18 @@ Funções puras, zero I/O:
 | `@tim/validators`  | Zod schemas                                   |
 | `@tim/ui`          | Design system mínimo                          |
 
-## Fluxo típico — criar transação
+## Fluxo típico — listar transações (GET)
+
+```
+Client (TanStack Query)
+  → GET /api/v1/transactions  (browser → @tim/web rewrite)
+    → @tim/api (Hono)
+      → requireApiContext()
+        → loadTransactions(ctx, query)  [@tim/application/queries]
+          → @tim/db
+```
+
+## Fluxo típico — criar transação (mutação web)
 
 ```
 UI form
@@ -72,12 +94,13 @@ UI form
 
 ## Onde NÃO colocar código
 
-| Anti-padrão                 | Correto                                                              |
-| --------------------------- | -------------------------------------------------------------------- |
-| SQL em componente React     | `@tim/application` ou query em Server Component com filtro household |
-| Regra de parcelas na action | `@tim/domain`                                                        |
-| Capability check só na UI   | `@tim/auth` + `@tim/application`                                     |
-| Parser CSV na action        | `@tim/imex`                                                          |
+| Anti-padrão                 | Correto                                                      |
+| --------------------------- | ------------------------------------------------------------ |
+| SQL em componente React     | `@tim/application/queries` ou use case em `@tim/application` |
+| SQL em `apps/web` loaders   | `@tim/application/queries` — route só faz HTTP               |
+| Regra de parcelas na action | `@tim/domain`                                                |
+| Capability check só na UI   | `@tim/auth` + `@tim/application`                             |
+| Parser CSV na action        | `@tim/imex`                                                  |
 
 ## Testes por camada
 

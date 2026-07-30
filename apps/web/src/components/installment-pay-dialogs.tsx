@@ -20,8 +20,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { runWithToast } from '@/lib/action-toast';
-import { payInstallmentAction, payInstallmentsBulkAction } from '@/server/actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { payInstallmentAction, payInstallmentsBulkAction } from '@/lib/api/mutations';
 
 export interface FinancingInstallmentRow {
   id: string;
@@ -74,6 +74,7 @@ export function PayInstallmentsDialog({
   categories: Array<{ id: string; name: string }>;
 }): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [paidOns, setPaidOns] = useState<Record<string, string>>({});
   const [applyAllDate, setApplyAllDate] = useState('');
@@ -128,10 +129,12 @@ export function PayInstallmentsDialog({
         </DialogHeader>
 
         <form
-          action={async (formData) => {
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               try {
-                await runWithToast(
+                await run(
                   () =>
                     installments.length === 1
                       ? payInstallmentAction(formData)
@@ -139,6 +142,7 @@ export function PayInstallmentsDialog({
                   {
                     loading: 'Registrando pagamento…',
                     success: installments.length === 1 ? 'Parcela paga' : 'Parcelas pagas',
+                    invalidate: 'financing',
                   },
                 );
                 onOpenChange(false);
@@ -268,6 +272,7 @@ export function AmortizeSelectedDialog({
   const [amountDraft, setAmountDraft] = useState(formatCentsForBrInput(currentMonth.amountCents));
   const [extraDraft, setExtraDraft] = useState(formatCentsForBrInput(suggestedPrincipalCents));
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
 
   useEffect(() => {
     if (!open) return;
@@ -299,12 +304,15 @@ export function AmortizeSelectedDialog({
         </DialogHeader>
 
         <form
-          action={async (formData) => {
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               try {
-                await runWithToast(() => payInstallmentAction(formData), {
+                await run(() => payInstallmentAction(formData), {
                   loading: 'Confirmando amortização…',
                   success: 'Amortização registrada',
+                  invalidate: 'financing',
                 });
                 onOpenChange(false);
               } catch {

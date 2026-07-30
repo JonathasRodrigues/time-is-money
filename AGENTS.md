@@ -16,7 +16,7 @@ Ponto de entrada para agentes de IA. Leia este arquivo antes de qualquer altera�
 | Comando             | Descrição                            |
 | ------------------- | ------------------------------------ |
 | `pnpm install`      | Instala dependências do workspace    |
-| `pnpm dev`          | Sobe `@tim/web` (Next.js, Turbopack) |
+| `pnpm dev`          | Sobe `@tim/web` + `@tim/api` (Turbo) |
 | `pnpm build`        | Build de todos os pacotes via Turbo  |
 | `pnpm lint`         | ESLint/tsc lint em todos os pacotes  |
 | `pnpm typecheck`    | Verificação de tipos                 |
@@ -32,21 +32,23 @@ Ponto de entrada para agentes de IA. Leia este arquivo antes de qualquer altera�
 
 ## Mapa de pacotes
 
-| Pacote             | Caminho                                           | Responsabilidade                                          |
-| ------------------ | ------------------------------------------------- | --------------------------------------------------------- |
-| `@tim/web`         | `/home/flaesh/time-is-money/apps/web`             | App Next.js 15, UI, server actions, rotas API/cron        |
-| `@tim/application` | `/home/flaesh/time-is-money/packages/application` | Casos de uso (transações, financiamentos, audit)          |
-| `@tim/domain`      | `/home/flaesh/time-is-money/packages/domain`      | Regras puras, resolução de entidades, seeds de categorias |
-| `@tim/db`          | `/home/flaesh/time-is-money/packages/db`          | Drizzle schema, Neon client, migrations, seed             |
-| `@tim/auth`        | `/home/flaesh/time-is-money/packages/auth`        | Sessão, MFA, capabilities                                 |
-| `@tim/permissions` | `/home/flaesh/time-is-money/packages/permissions` | RBAC (admin/editor/viewer)                                |
-| `@tim/validators`  | `/home/flaesh/time-is-money/packages/validators`  | Schemas Zod de entrada                                    |
-| `@tim/crypto`      | `/home/flaesh/time-is-money/packages/crypto`      | AES-256-GCM por household                                 |
-| `@tim/jarvis`      | `/home/flaesh/time-is-money/packages/jarvis`      | Intents, parser heurístico, prompt LLM                    |
-| `@tim/imex`        | `/home/flaesh/time-is-money/packages/imex`        | Import/export CSV/XLSX                                    |
-| `@tim/email`       | `/home/flaesh/time-is-money/packages/email`       | Templates React Email + Resend                            |
-| `@tim/ui`          | `/home/flaesh/time-is-money/packages/ui`          | Componentes compartilhados                                |
-| `@tim/config`      | `/home/flaesh/time-is-money/packages/config`      | Configs compartilhadas (ESLint, TS)                       |
+| Pacote              | Caminho                                            | Responsabilidade                                                                                       |
+| ------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `@tim/api`          | `/home/flaesh/time-is-money/apps/api`              | API REST Hono `/api/v1`; em prod embutida no Next (Vercel). Standalone opcional (`docs/ops/deploy.md`) |
+| `@tim/web`          | `/home/flaesh/time-is-money/apps/web`              | App Next.js 15, UI, server actions, cron, proxy API                                                    |
+| `@tim/application`  | `/home/flaesh/time-is-money/packages/application`  | Casos de uso (transações, financiamentos, audit)                                                       |
+| `@tim/domain`       | `/home/flaesh/time-is-money/packages/domain`       | Regras puras, resolução de entidades, seeds de categorias                                              |
+| `@tim/db`           | `/home/flaesh/time-is-money/packages/db`           | Drizzle schema, Neon client, migrations, seed                                                          |
+| `@tim/auth`         | `/home/flaesh/time-is-money/packages/auth`         | Sessão, MFA, capabilities                                                                              |
+| `@tim/permissions`  | `/home/flaesh/time-is-money/packages/permissions`  | RBAC (admin/editor/viewer)                                                                             |
+| `@tim/validators`   | `/home/flaesh/time-is-money/packages/validators`   | Schemas Zod de entrada                                                                                 |
+| `@tim/api-contract` | `/home/flaesh/time-is-money/packages/api-contract` | Contrato REST `/api/v1` (paths, Zod, OpenAPI) — web + RN                                               |
+| `@tim/crypto`       | `/home/flaesh/time-is-money/packages/crypto`       | AES-256-GCM por household                                                                              |
+| `@tim/jarvis`       | `/home/flaesh/time-is-money/packages/jarvis`       | Intents, parser heurístico, prompt LLM                                                                 |
+| `@tim/imex`         | `/home/flaesh/time-is-money/packages/imex`         | Import/export CSV/XLSX                                                                                 |
+| `@tim/email`        | `/home/flaesh/time-is-money/packages/email`        | Templates React Email + Resend                                                                         |
+| `@tim/ui`           | `/home/flaesh/time-is-money/packages/ui`           | Componentes compartilhados                                                                             |
+| `@tim/config`       | `/home/flaesh/time-is-money/packages/config`       | Configs compartilhadas (ESLint, TS)                                                                    |
 
 ## Regras obrigatórias
 
@@ -59,7 +61,8 @@ Ponto de entrada para agentes de IA. Leia este arquivo antes de qualquer altera�
 
 - **Domain** (`@tim/domain`): funções puras, sem I/O.
 - **Application** (`@tim/application`): orquestra DB + auth + audit.
-- **Web** (`apps/web`): apenas UI, server actions finas e wiring.
+- **Web** (`apps/web`): UI, proxy `/api/v1`, mutações client em `lib/api/mutations.ts`, cron, imex/members server actions.
+- Contrato HTTP em `@tim/api-contract` (não duplicar DTOs na web/mobile). Ver `docs/api/`.
 - Dependências apontam para dentro: web → application → domain.
 
 ### Multi-tenancy (`household_id`)
@@ -94,13 +97,14 @@ Ponto de entrada para agentes de IA. Leia este arquivo antes de qualquer altera�
 
 ## Onde colocar código novo
 
-| Tarefa                   | Local                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| Nova entidade de domínio | `packages/domain`, schema em `packages/db`, use case em `packages/application` |
-| Nova server action       | `apps/web/src/server/`                                                         |
-| Novo widget dashboard    | `apps/web/src/app/(app)/dashboard/` + `components/charts.tsx`                  |
-| Nova intent Jarvis       | `packages/jarvis/src/index.ts` + playbook                                      |
-| Novo alerta email        | `packages/email` + rota cron em `apps/web/src/app/api/cron/`                   |
+| Tarefa                      | Local                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| Nova entidade de domínio    | `packages/domain`, schema em `packages/db`, use case em `packages/application`     |
+| Mutação de domínio (web/RN) | `apps/api` + `@tim/application`; web client em `apps/web/src/lib/api/mutations.ts` |
+| Nova server action (legado) | `apps/web/src/server/` (ex.: `imex-actions.ts`, `members-actions.ts`)              |
+| Novo widget dashboard       | `apps/web/src/app/(app)/dashboard/` + `components/charts.tsx`                      |
+| Nova intent Jarvis          | `packages/jarvis/src/index.ts` + playbook                                          |
+| Novo alerta email           | `packages/email` + rota cron em `apps/web/src/app/api/cron/`                       |
 
 ## Variáveis de ambiente
 

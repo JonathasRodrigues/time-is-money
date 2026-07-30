@@ -3,6 +3,7 @@
 import { useFormStatus } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import type { VariantProps } from 'class-variance-authority';
+import { useActionFormPending } from '@/components/action-form-context';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -24,7 +25,8 @@ export function SubmitButton({
   ...props
 }: SubmitButtonProps): React.ReactElement {
   const { pending: formPending } = useFormStatus();
-  const pending = Boolean(isPending) || formPending;
+  const actionFormPending = useActionFormPending();
+  const pending = Boolean(isPending) || formPending || actionFormPending;
 
   return (
     <Button

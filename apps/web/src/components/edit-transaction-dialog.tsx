@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatCentsForBrInput } from '@tim/domain';
 import { Loader2, Pencil } from 'lucide-react';
+import { ActionForm } from '@/components/action-form';
 import { FormBusySurface } from '@/components/form-busy-surface';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -21,8 +22,8 @@ import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useBusyAction } from '@/hooks/use-busy-action';
-import { runWithToast, withActionToast } from '@/lib/action-toast';
-import { deleteTransactionAction, updateTransactionAction } from '@/server/actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { deleteTransactionAction, updateTransactionAction } from '@/lib/api/mutations';
 
 interface Option {
   id: string;
@@ -60,7 +61,8 @@ export function EditTransactionDialog({
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<'income' | 'expense'>(transaction.type);
   const [status, setStatus] = useState<'pending' | 'paid'>(transaction.status);
-  const { busy, isBusy, run } = useBusyAction<'delete'>();
+  const { busy, isBusy, run: runBusy } = useBusyAction<'delete'>();
+  const { run } = useMutationFeedback();
   const pendingDelete = isBusy('delete');
 
   const defaultDate =
@@ -108,17 +110,12 @@ export function EditTransactionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form
-          action={withActionToast(
-            async (formData) => {
-              await updateTransactionAction(formData);
-              setOpen(false);
-            },
-            {
-              loading: 'Salvando…',
-              success: 'Lançamento atualizado',
-            },
-          )}
+        <ActionForm
+          action={updateTransactionAction}
+          successMessage="Lançamento atualizado"
+          loadingMessage="Salvando…"
+          invalidate="money"
+          onSuccess={() => setOpen(false)}
         >
           <FormBusySurface className="grid gap-3">
             <input type="hidden" name="transactionId" value={transaction.id} />
@@ -164,7 +161,7 @@ export function EditTransactionDialog({
                   {isExpense ? 'Pago' : 'Recebido'}
                 </ToggleGroupItem>
                 <ToggleGroupItem value="pending" className="flex-1">
-                  {isExpense ? 'A pagar' : 'A receber'}
+                  {isExpense ? 'Contas a pagar' : 'Contas a receber'}
                 </ToggleGroupItem>
               </ToggleGroup>
             </div>
@@ -276,11 +273,12 @@ export function EditTransactionDialog({
                   }
                   const formData = new FormData();
                   formData.set('transactionId', transaction.id);
-                  void run('delete', async () => {
+                  void runBusy('delete', async () => {
                     try {
-                      await runWithToast(() => deleteTransactionAction(formData), {
+                      await run(() => deleteTransactionAction(formData), {
                         loading: 'Excluindo…',
                         success: 'Lançamento excluído',
+                        invalidate: 'money',
                       });
                       setOpen(false);
                     } catch {
@@ -303,7 +301,7 @@ export function EditTransactionDialog({
               </SubmitButton>
             </div>
           </FormBusySurface>
-        </form>
+        </ActionForm>
       </DialogContent>
     </Dialog>
   );

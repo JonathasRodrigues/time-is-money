@@ -15,8 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { runWithToast } from '@/lib/action-toast';
-import { upsertPlanItemsAction } from '@/server/actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { upsertPlanItemsAction } from '@/lib/api/mutations';
 
 export interface PlanItemRow {
   label: string;
@@ -26,36 +26,48 @@ export interface PlanItemRow {
 interface PlanItemsTableProps {
   planId: string;
   items: PlanItemRow[];
+  onChange?: (items: PlanItemRow[]) => void;
   readOnly?: boolean;
 }
 
 export function PlanItemsTable({
   planId,
-  items: initialItems,
+  items,
+  onChange,
   readOnly = false,
 }: PlanItemsTableProps): React.ReactElement {
-  const [items, setItems] = useState<PlanItemRow[]>(initialItems);
+  const [localItems, setLocalItems] = useState<PlanItemRow[] | null>(null);
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
 
-  const totalCents = items.reduce((sum, item) => sum + item.amountCents, 0);
+  const rows = onChange != null ? items : (localItems ?? items);
+  const totalCents = rows.reduce((sum, item) => sum + item.amountCents, 0);
+
+  function setRows(next: PlanItemRow[]): void {
+    if (onChange != null) {
+      onChange(next);
+      return;
+    }
+    setLocalItems(next);
+  }
 
   function updateItem(index: number, patch: Partial<PlanItemRow>): void {
-    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+    setRows(rows.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }
 
   function addItem(): void {
-    setItems((prev) => [...prev, { label: '', amountCents: 0 }]);
+    setRows([...rows, { label: '', amountCents: 0 }]);
   }
 
   function removeItem(index: number): void {
-    setItems((prev) => prev.filter((_, i) => i !== index));
+    setRows(rows.filter((_, i) => i !== index));
   }
 
   function saveItems(): void {
-    const valid = items.filter((item) => item.label.trim() && item.amountCents > 0);
+    const valid = rows.filter((item) => item.label.trim() && item.amountCents > 0);
     if (valid.length === 0) return;
     startTransition(async () => {
-      await runWithToast(
+      await run(
         () =>
           upsertPlanItemsAction({
             planId,
@@ -65,13 +77,19 @@ export function PlanItemsTable({
               sortOrder: index,
             })),
           }),
-        { loading: 'Salvando itens…', success: 'Itens atualizados' },
+        { loading: 'Salvando itens…', success: 'Itens atualizados', invalidate: 'financing' },
       );
     });
   }
 
   return (
     <div className="space-y-3">
+      <div>
+        <p className="text-sm font-medium">Itens da meta</p>
+        <p className="text-xs text-muted-foreground">
+          A soma dos itens define o total do planejamento (ex.: hotel + passagem).
+        </p>
+      </div>
       <Table>
         <TableHeader>
           <TableRow>
@@ -81,7 +99,7 @@ export function PlanItemsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item, index) => (
+          {rows.map((item, index) => (
             <TableRow key={`${index}-${item.label}`}>
               <TableCell>
                 {readOnly ? (
@@ -115,7 +133,7 @@ export function PlanItemsTable({
                     size="icon"
                     className="size-8"
                     onClick={() => removeItem(index)}
-                    disabled={items.length <= 1}
+                    disabled={rows.length <= 1}
                   >
                     <Trash2 className="size-4" />
                   </Button>

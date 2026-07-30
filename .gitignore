@@ -13,6 +13,7 @@ test-results
 .vercel
 *.tsbuildinfo
 .cursor
+.tools
 .pnpm-store
 apps/web/public/sw.js
 apps/web/public/sw.js.map

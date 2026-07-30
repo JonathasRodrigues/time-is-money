@@ -37,7 +37,7 @@ export function NewFinancingSheet({
             o cronograma.
           </SheetDescription>
         </SheetHeader>
-        <div className="px-4 pb-6">
+        <div>
           <FinancingForm
             centers={centers}
             accounts={accounts}

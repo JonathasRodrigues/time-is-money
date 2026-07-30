@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-function isDemoMode(): boolean {
-  return process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
+function shouldBypassAuth(): boolean {
+  const demo = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
+  const mock =
+    process.env.MOCK_API === '1' ||
+    process.env.MOCK_API === 'true' ||
+    process.env.NEXT_PUBLIC_MOCK_API === '1' ||
+    process.env.NEXT_PUBLIC_MOCK_API === 'true';
+  return demo || mock;
 }
 
 function isClerkConfigured(): boolean {
@@ -11,7 +17,7 @@ function isClerkConfigured(): boolean {
 }
 
 function shouldUseClerk(): boolean {
-  if (isDemoMode()) return false;
+  if (shouldBypassAuth()) return false;
   return isClerkConfigured();
 }
 
@@ -27,6 +33,8 @@ export default async function middleware(req: NextRequest) {
     '/sign-up(.*)',
     '/invite(.*)',
     '/api/cron(.*)',
+    '/api/v1(.*)',
+    '/api/health',
     '/manifest.webmanifest',
     '/sw.js',
     '/icons(.*)',
@@ -36,6 +44,7 @@ export default async function middleware(req: NextRequest) {
     if (isPublicRoute(request)) {
       return NextResponse.next();
     }
+
     await auth.protect();
     return NextResponse.next();
   });

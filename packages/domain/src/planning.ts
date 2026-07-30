@@ -1,11 +1,12 @@
 import type { AmortizationRow, AmortizationSystem } from './index';
 
-export type PlanKind = 'travel' | 'financing_payoff' | 'custom';
+export type PlanKind = 'travel' | 'financing_payoff' | 'real_estate_amortization' | 'custom';
 export type FinancingCategory = 'real_estate' | 'vehicle' | 'personal' | 'other';
 
 export const PLAN_KIND_LABEL: Record<PlanKind, string> = {
   travel: 'Viagem',
   financing_payoff: 'Quitação',
+  real_estate_amortization: 'Amortização',
   custom: 'Personalizado',
 };
 
@@ -87,6 +88,111 @@ export interface PayoffStrategyComparison {
   /** Esforço médio mensal em extras (centavos). */
   extraMonthlyCents: number;
   interestSavedCents: number;
+}
+
+/** Resultado de uma amortização pontual (estilo banco): valor + reduzir prazo ou parcela. */
+export interface SingleAmortizationResult {
+  applicationMode: PayoffApplicationMode;
+  extraCents: number;
+  monthsBefore: number;
+  monthsAfter: number;
+  /** Parcela contratual (Price/fixed) ou amortização periódica (SAC) antes. */
+  paymentBeforeCents: number;
+  /** Parcela / amortização periódica após a amortização. */
+  paymentAfterCents: number;
+  totalInterestBeforeCents: number;
+  totalInterestAfterCents: number;
+  interestSavedCents: number;
+  payoffDateBefore: string | null;
+  payoffDateAfter: string | null;
+  scheduleAfter: AmortizationRow[];
+  /** Parcelas do final cobertas pelo valor (quando há cronograma real). */
+  trailingSelection: TrailingAmortizationSelection | null;
+}
+
+export interface PendingInstallmentLike {
+  number: number;
+  dueOn: string;
+  principalCents: number;
+  amountCents?: number;
+  interestCents?: number;
+  status?: string;
+}
+
+export interface TrailingAmortizationSelection {
+  targetPrincipalCents: number;
+  appliedPrincipalCents: number;
+  selected: Array<{
+    number: number;
+    dueOn: string;
+    /** Principal aplicado nesta parcela (pode ser parcial). */
+    principalCents: number;
+    fullPrincipalCents: number;
+    partial: boolean;
+  }>;
+  fromNumber: number | null;
+  toNumber: number | null;
+  fullyRemovedCount: number;
+}
+
+/**
+ * Escolhe parcelas do final do cronograma até completar o valor de amortização (principal).
+ * Última parcela pode ser parcial se o valor não fecha uma parcela inteira.
+ */
+export function pickTrailingInstallmentsForAmortization(input: {
+  installments: readonly PendingInstallmentLike[];
+  targetPrincipalCents: number;
+}): TrailingAmortizationSelection {
+  const target = Math.max(0, Math.floor(input.targetPrincipalCents));
+  const pending = input.installments
+    .filter((row) => {
+      if (row.status != null && row.status !== 'pending') return false;
+      return row.principalCents > 0;
+    })
+    .slice()
+    .sort((a, b) => a.number - b.number);
+
+  if (target <= 0 || pending.length === 0) {
+    return {
+      targetPrincipalCents: target,
+      appliedPrincipalCents: 0,
+      selected: [],
+      fromNumber: null,
+      toNumber: null,
+      fullyRemovedCount: 0,
+    };
+  }
+
+  let remaining = target;
+  const selected: TrailingAmortizationSelection['selected'] = [];
+
+  for (let i = pending.length - 1; i >= 0 && remaining > 0; i -= 1) {
+    const row = pending[i];
+    if (row == null) continue;
+    const fullPrincipal = Math.max(0, Math.floor(row.principalCents));
+    if (fullPrincipal <= 0) continue;
+    const take = Math.min(fullPrincipal, remaining);
+    selected.push({
+      number: row.number,
+      dueOn: row.dueOn,
+      principalCents: take,
+      fullPrincipalCents: fullPrincipal,
+      partial: take < fullPrincipal,
+    });
+    remaining -= take;
+  }
+
+  selected.sort((a, b) => a.number - b.number);
+  const appliedPrincipalCents = selected.reduce((sum, row) => sum + row.principalCents, 0);
+
+  return {
+    targetPrincipalCents: target,
+    appliedPrincipalCents,
+    selected,
+    fromNumber: selected[0]?.number ?? null,
+    toNumber: selected.at(-1)?.number ?? null,
+    fullyRemovedCount: selected.filter((row) => !row.partial).length,
+  };
 }
 
 export interface SavingsGoalSimulation {
@@ -271,6 +377,28 @@ export function applyGapToLastContribution(
   if (!last) return rows;
   last.amountCents = Math.max(0, last.amountCents + gapCents);
   return rows;
+}
+
+/**
+ * Redistribui o valor ainda necessário (meta − já guardado) igualmente entre os meses.
+ * O resto da divisão em centavos vai para o último mês.
+ */
+export function redistributeContributionsToTarget(input: {
+  contributions: readonly PlanContributionRow[];
+  targetCents: number;
+  savedCents?: number;
+}): PlanContributionRow[] {
+  const rows = input.contributions.map((row) => ({ ...row }));
+  const n = rows.length;
+  if (n === 0) return rows;
+  const remaining = Math.max(0, Math.floor(input.targetCents) - Math.max(0, input.savedCents ?? 0));
+  const base = Math.floor(remaining / n);
+  let leftover = remaining - base * n;
+  return rows.map((row, index) => {
+    const extra = index === n - 1 ? leftover : 0;
+    if (index === n - 1) leftover = 0;
+    return { dueOn: row.dueOn, amountCents: base + extra };
+  });
 }
 
 /** Sistema de amortização sugerido por categoria de financiamento. */
@@ -641,6 +769,129 @@ export function simulatePayoffWithExtraPayment(input: {
   });
 }
 
+function contractualPaymentCents(input: {
+  system: AmortizationSystem;
+  installmentAmountCents?: number;
+  amortizationCents?: number;
+  baseline: PayoffSimulationResult;
+}): number {
+  if (input.system === 'sac') {
+    if (input.amortizationCents != null && input.amortizationCents > 0) {
+      return input.amortizationCents;
+    }
+    return input.baseline.schedule[0]?.principalCents ?? 0;
+  }
+  if (input.installmentAmountCents != null && input.installmentAmountCents > 0) {
+    return input.installmentAmountCents;
+  }
+  return input.baseline.schedule[0]?.amountCents ?? 0;
+}
+
+function paymentAfterAmortizationCents(input: {
+  system: AmortizationSystem;
+  applicationMode: PayoffApplicationMode;
+  paymentBeforeCents: number;
+  after: PayoffSimulationResult;
+}): number {
+  if (input.applicationMode === 'reduce_term') {
+    return input.paymentBeforeCents;
+  }
+  // Após o mês da amortização pontual, a parcela/amortização é recalculada.
+  const next = input.after.schedule[1] ?? input.after.schedule[0];
+  if (next == null) return 0;
+  if (input.system === 'sac') {
+    // No mês 1 o principal inclui o extra; no mês 2+ o principal ≈ nova amortização periódica.
+    return input.after.schedule[1]?.principalCents ?? next.principalCents;
+  }
+  return next.amountCents;
+}
+
+/**
+ * Simula uma amortização pontual (valor único no 1º mês), estilo banco:
+ * reduzir prazo (mantém parcela) ou reduzir parcela (mantém prazo).
+ *
+ * Se `installments` for passado, o valor escolhe parcelas do **final** do cronograma
+ * (principal) até completar o montante — como no banco.
+ */
+export function simulateSingleAmortization(input: {
+  balanceCents: number;
+  system: AmortizationSystem;
+  annualRateBps?: number;
+  installmentAmountCents?: number;
+  amortizationCents?: number;
+  firstDueOn: string;
+  extraCents: number;
+  applicationMode?: PayoffApplicationMode;
+  installments?: readonly PendingInstallmentLike[];
+}): SingleAmortizationResult {
+  const applicationMode = input.applicationMode ?? 'reduce_term';
+  const requestedExtra = Math.max(0, Math.floor(input.extraCents));
+
+  const trailingSelection =
+    input.installments != null && input.installments.length > 0 && requestedExtra > 0
+      ? pickTrailingInstallmentsForAmortization({
+          installments: input.installments,
+          targetPrincipalCents: requestedExtra,
+        })
+      : null;
+
+  const extraCents = trailingSelection?.appliedPrincipalCents ?? requestedExtra;
+
+  const baseline = simulatePayoffPlan({
+    balanceCents: input.balanceCents,
+    system: input.system,
+    annualRateBps: input.annualRateBps,
+    installmentAmountCents: input.installmentAmountCents,
+    amortizationCents: input.amortizationCents,
+    firstDueOn: input.firstDueOn,
+    rules: [],
+    applicationMode: 'reduce_term',
+  });
+
+  const after = simulatePayoffPlan({
+    balanceCents: input.balanceCents,
+    system: input.system,
+    annualRateBps: input.annualRateBps,
+    installmentAmountCents: input.installmentAmountCents,
+    amortizationCents: input.amortizationCents,
+    firstDueOn: input.firstDueOn,
+    rules: extraCents > 0 ? [{ type: 'one_time', atMonth: 1, cents: extraCents }] : [],
+    applicationMode,
+    remainingTermMonths: applicationMode === 'reduce_payment' ? baseline.months : undefined,
+  });
+
+  const paymentBeforeCents = contractualPaymentCents({
+    system: input.system,
+    installmentAmountCents: input.installmentAmountCents,
+    amortizationCents: input.amortizationCents,
+    baseline,
+  });
+  const paymentAfterCents = paymentAfterAmortizationCents({
+    system: input.system,
+    applicationMode,
+    paymentBeforeCents,
+    after,
+  });
+
+  const interestSavedCents = Math.max(0, baseline.totalInterestCents - after.totalInterestCents);
+
+  return {
+    applicationMode,
+    extraCents,
+    monthsBefore: baseline.months,
+    monthsAfter: after.months,
+    paymentBeforeCents,
+    paymentAfterCents,
+    totalInterestBeforeCents: baseline.totalInterestCents,
+    totalInterestAfterCents: after.totalInterestCents,
+    interestSavedCents,
+    payoffDateBefore: baseline.schedule.at(-1)?.dueOn ?? null,
+    payoffDateAfter: after.schedule.at(-1)?.dueOn ?? null,
+    scheduleAfter: after.schedule,
+    trailingSelection,
+  };
+}
+
 /** Calcula amortização extra mensal necessária para quitar na data alvo. */
 export function simulatePayoffByTargetDate(input: {
   balanceCents: number;
@@ -708,6 +959,272 @@ export function simulatePayoffByTargetDate(input: {
   });
 
   return { extraMonthlyCents: bestExtra, simulation };
+}
+
+export interface PayoffPlanRecommendation {
+  id: string;
+  /** Ex.: "Pagar +3 parcelas/mês" */
+  label: string;
+  summary: string;
+  rules: PayoffExtraRule[];
+  months: number;
+  durationLabel: string;
+  totalInterestCents: number;
+  interestSavedCents: number;
+  averageExtraCents: number;
+  meetsTarget: boolean;
+}
+
+/**
+ * Sugere planos concretos para quitar até a data alvo:
+ * parcelas extras/mês, R$/mês, 13º anual, combinações.
+ */
+export function recommendPayoffPlansForTargetDate(input: {
+  balanceCents: number;
+  system: AmortizationSystem;
+  annualRateBps?: number;
+  installmentAmountCents?: number;
+  amortizationCents?: number;
+  firstDueOn: string;
+  targetDate: string;
+  fromDate?: string;
+  applicationMode?: PayoffApplicationMode;
+}): PayoffPlanRecommendation[] {
+  const applicationMode = input.applicationMode ?? 'reduce_term';
+  const fromDate = input.fromDate ?? new Date().toISOString().slice(0, 10);
+  const targetMonths = monthsUntil(input.targetDate, fromDate);
+
+  const baseline = simulatePayoffPlan({
+    balanceCents: input.balanceCents,
+    system: input.system,
+    annualRateBps: input.annualRateBps,
+    installmentAmountCents: input.installmentAmountCents,
+    amortizationCents: input.amortizationCents,
+    firstDueOn: input.firstDueOn,
+    rules: [],
+    applicationMode: 'reduce_term',
+  });
+
+  if (targetMonths <= 0) {
+    return [];
+  }
+
+  if (baseline.months <= targetMonths) {
+    return [
+      {
+        id: 'already-on-track',
+        label: 'Cronograma atual já basta',
+        summary: `Sem extras — quitação em ${formatMonthsAsDuration(baseline.months)}.`,
+        rules: [],
+        months: baseline.months,
+        durationLabel: formatMonthsAsDuration(baseline.months),
+        totalInterestCents: baseline.totalInterestCents,
+        interestSavedCents: 0,
+        averageExtraCents: 0,
+        meetsTarget: true,
+      },
+    ];
+  }
+
+  const planInput = {
+    balanceCents: input.balanceCents,
+    system: input.system,
+    annualRateBps: input.annualRateBps,
+    installmentAmountCents: input.installmentAmountCents,
+    amortizationCents: input.amortizationCents,
+    firstDueOn: input.firstDueOn,
+    applicationMode,
+  };
+
+  function toRecommendation(
+    id: string,
+    label: string,
+    summary: string,
+    rules: PayoffExtraRule[],
+    simulation: PayoffSimulationResult,
+  ): PayoffPlanRecommendation {
+    return {
+      id,
+      label,
+      summary,
+      rules,
+      months: simulation.months,
+      durationLabel: formatMonthsAsDuration(simulation.months),
+      totalInterestCents: simulation.totalInterestCents,
+      interestSavedCents: Math.max(0, baseline.totalInterestCents - simulation.totalInterestCents),
+      averageExtraCents: simulation.averageExtraCents,
+      meetsTarget: simulation.months <= targetMonths,
+    };
+  }
+
+  const recommendations: PayoffPlanRecommendation[] = [];
+
+  // 1) Extra R$/mês puro
+  const byMonthly = simulatePayoffByTargetDate({
+    ...planInput,
+    targetDate: input.targetDate,
+    fromDate,
+    baseRules: [],
+  });
+  if (byMonthly.extraMonthlyCents > 0) {
+    const rules: PayoffExtraRule[] = [
+      { type: 'monthly_cents', cents: byMonthly.extraMonthlyCents },
+    ];
+    recommendations.push(
+      toRecommendation(
+        'monthly-cents',
+        `+${formatCentsShort(byMonthly.extraMonthlyCents)}/mês`,
+        `Amortize ${formatCentsShort(byMonthly.extraMonthlyCents)} a mais todo mês.`,
+        rules,
+        byMonthly.simulation,
+      ),
+    );
+  }
+
+  // 2) Menor N de parcelas extras/mês que fecha a meta
+  let foundInstallments: number | null = null;
+  for (let count = 1; count <= 12; count += 1) {
+    const rules: PayoffExtraRule[] = [{ type: 'extra_installments', count }];
+    const sim = simulatePayoffPlan({ ...planInput, rules });
+    if (sim.months <= targetMonths) {
+      foundInstallments = count;
+      const unit =
+        input.system === 'sac'
+          ? Math.max(0, input.amortizationCents ?? 0)
+          : Math.max(0, input.installmentAmountCents ?? 0);
+      recommendations.push(
+        toRecommendation(
+          'extra-installments',
+          count === 1 ? '+1 parcela/mês' : `+${count} parcelas/mês`,
+          unit > 0
+            ? `Pague ${count === 1 ? '1 parcela extra' : `${count} parcelas extras`} por mês (~${formatCentsShort(unit * count)}/mês).`
+            : `Pague ${count === 1 ? '1 parcela extra' : `${count} parcelas extras`} por mês.`,
+          rules,
+          sim,
+        ),
+      );
+      break;
+    }
+  }
+  if (foundInstallments == null) {
+    const rules: PayoffExtraRule[] = [{ type: 'extra_installments', count: 12 }];
+    const sim = simulatePayoffPlan({ ...planInput, rules });
+    recommendations.push(
+      toRecommendation(
+        'extra-installments-max',
+        '+12 parcelas/mês',
+        `Mesmo com 12 parcelas extras/mês ainda leva ${formatMonthsAsDuration(sim.months)}.`,
+        rules,
+        sim,
+      ),
+    );
+  }
+
+  // 3) 13º / aporte anual em dezembro
+  let lo = 0;
+  let hi = Math.max(input.balanceCents, 1);
+  let bestAnnual = hi;
+  for (let iter = 0; iter < 40; iter += 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    const rules: PayoffExtraRule[] = [{ type: 'annual_lump', month: 12, cents: mid }];
+    const sim = simulatePayoffPlan({
+      ...planInput,
+      rules,
+      maxMonths: targetMonths + 1,
+    });
+    if (sim.months <= targetMonths) {
+      bestAnnual = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  if (bestAnnual > 0 && bestAnnual < input.balanceCents) {
+    const rules: PayoffExtraRule[] = [{ type: 'annual_lump', month: 12, cents: bestAnnual }];
+    const sim = simulatePayoffPlan({ ...planInput, rules });
+    if (sim.months <= targetMonths) {
+      recommendations.push(
+        toRecommendation(
+          'annual-december',
+          `+${formatCentsShort(bestAnnual)} em dezembro`,
+          `Aporte anual (ex.: 13º / bônus) de ${formatCentsShort(bestAnnual)} todo dezembro.`,
+          rules,
+          sim,
+        ),
+      );
+    }
+  }
+
+  // 4) Combo: +1 parcela/mês + o que falta em R$/mês
+  {
+    const baseRules: PayoffExtraRule[] = [{ type: 'extra_installments', count: 1 }];
+    const withOne = simulatePayoffPlan({ ...planInput, rules: baseRules });
+    if (withOne.months > targetMonths) {
+      const combo = simulatePayoffByTargetDate({
+        ...planInput,
+        targetDate: input.targetDate,
+        fromDate,
+        baseRules,
+      });
+      if (combo.extraMonthlyCents > 0) {
+        const rules: PayoffExtraRule[] = [
+          ...baseRules,
+          { type: 'monthly_cents', cents: combo.extraMonthlyCents },
+        ];
+        recommendations.push(
+          toRecommendation(
+            'combo-one-plus-monthly',
+            `+1 parcela/mês + ${formatCentsShort(combo.extraMonthlyCents)}/mês`,
+            `Combine uma parcela extra com ${formatCentsShort(combo.extraMonthlyCents)} adicionais por mês.`,
+            rules,
+            combo.simulation,
+          ),
+        );
+      }
+    }
+  }
+
+  // 5) Combo: +2 parcelas/mês + 13º fixo sugerido (1 parcela)
+  {
+    const thirteenth =
+      input.system === 'sac'
+        ? Math.max(0, input.amortizationCents ?? 0)
+        : Math.max(0, input.installmentAmountCents ?? 0);
+    if (thirteenth > 0) {
+      const rules: PayoffExtraRule[] = [
+        { type: 'extra_installments', count: 2 },
+        { type: 'annual_lump', month: 12, cents: thirteenth },
+      ];
+      const sim = simulatePayoffPlan({ ...planInput, rules });
+      recommendations.push(
+        toRecommendation(
+          'combo-two-plus-thirteenth',
+          `+2 parcelas/mês + 13ª em dezembro`,
+          `Duas parcelas extras todo mês e mais uma parcela em dezembro (~${formatCentsShort(thirteenth)}).`,
+          rules,
+          sim,
+        ),
+      );
+    }
+  }
+
+  const meeting = recommendations.filter((item) => item.meetsTarget);
+  const ranked = (meeting.length > 0 ? meeting : recommendations).slice();
+  ranked.sort((a, b) => {
+    if (a.meetsTarget !== b.meetsTarget) return a.meetsTarget ? -1 : 1;
+    if (a.interestSavedCents !== b.interestSavedCents) {
+      return b.interestSavedCents - a.interestSavedCents;
+    }
+    return a.averageExtraCents - b.averageExtraCents;
+  });
+
+  // Dedup por label
+  const seen = new Set<string>();
+  return ranked.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 /** Compara cenários: atual, meta por data e regras compostas. */

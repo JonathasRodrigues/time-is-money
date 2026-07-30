@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { FilterBar, FilterField, FilterSelect, centerFilterOptions } from '@/components/filters';
 import { useSoftNavigate } from '@/components/navigating';
+import { useScopePreference } from '@/components/scope-preference';
 import { buildScopeHref, type PeriodKey } from '@/lib/scope-query';
 
 /** Filtro de centro — mesmo padrão visual das demais telas. */
@@ -23,6 +24,7 @@ export function CostCenterFilter({
 }): React.ReactElement {
   const router = useRouter();
   const { isPending, navigate } = useSoftNavigate();
+  const { rememberScope } = useScopePreference();
 
   return (
     <FilterBar pending={isPending}>
@@ -31,10 +33,12 @@ export function CostCenterFilter({
           ariaLabel="Centro de custo"
           value={activeId ?? 'all'}
           onValueChange={(value) => {
+            const center = value === 'all' ? null : value;
+            rememberScope({ center, period, from, to });
             navigate(() => {
               router.push(
                 buildScopeHref(basePath, {
-                  center: value === 'all' ? null : value,
+                  center,
                   period,
                   from,
                   to,

@@ -19,7 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ActionForm } from '@/components/action-form';
-import { createMonthlySeriesAction, createTransactionAction } from '@/server/actions';
+import { createMonthlySeriesAction, createTransactionAction } from '@/lib/api/mutations';
 
 type ReceivableFormKind = 'one_off' | 'monthly';
 
@@ -70,7 +70,7 @@ export function NewReceivableSheet({
           <SheetDescription>Avulsa (inclusive retroativa) ou fixa mensal.</SheetDescription>
         </SheetHeader>
 
-        <div className="mt-4 grid gap-4 px-4 pb-6">
+        <div className="grid gap-4">
           <ToggleGroup
             type="single"
             variant="outline"

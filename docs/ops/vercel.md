@@ -1,6 +1,6 @@
 # Operações — Vercel
 
-Deploy e configuração em produção.
+Deploy único: **web + API Hono** no mesmo projeto (`@tim/web`). Checklist: [`deploy.md`](./deploy.md).
 
 ## Projeto
 
@@ -19,27 +19,40 @@ Deploy e configuração em produção.
 
 Versão **22** — alinhada a `engines` em `package.json`.
 
+## API no mesmo deploy
+
+`@tim/api` (Hono) é montado em:
+
+`apps/web/src/app/api/v1/[[...route]]/route.ts`
+
+Health: `/api/health`.
+
+Em produção **não** defina `API_URL`. Se `API_URL` estiver setado, o Next faz rewrite/proxy para esse origin (útil no dev local com processo na porta 3001).
+
 ## Variáveis de ambiente
 
-Copiar todas de `.env.example` para Vercel (Production + Preview):
+| Var                                       | Notas                                                 |
+| ----------------------------------------- | ----------------------------------------------------- |
+| `DATABASE_URL`                            | Neon production (preview pode usar branch Neon)       |
+| `NEXT_PUBLIC_CLERK_*`, `CLERK_SECRET_KEY` | Clerk                                                 |
+| `ENCRYPTION_SECRET`, `CRON_SECRET`        | Secrets próprios                                      |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`     | Email                                                 |
+| `OPENAI_API_KEY`                          | Opcional (Jarvis)                                     |
+| `NEXT_PUBLIC_APP_URL`                     | URL Vercel production                                 |
+| `API_URL`                                 | **Só local / API standalone** — omitir em prod Vercel |
 
-- `DATABASE_URL` — Neon production (preview pode usar branch Neon)
-- `NEXT_PUBLIC_CLERK_*`, `CLERK_SECRET_KEY`
-- `ENCRYPTION_SECRET`, `CRON_SECRET`
-- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
-- `OPENAI_API_KEY` (opcional)
-- `NEXT_PUBLIC_APP_URL` — URL Vercel production
+Não definir `MOCK_API` / `DEMO_MODE` em produção.
 
 ## Cron Jobs
 
-Exemplo `vercel.json` na raiz ou config dashboard:
+Configurado em `apps/web/vercel.json`:
 
 ```json
 {
   "crons": [
     {
       "path": "/api/cron/due-reminders",
-      "schedule": "0 12 * * *"
+      "schedule": "0 11 * * *"
     }
   ]
 }
@@ -51,23 +64,13 @@ Rota exige header:
 Authorization: Bearer <CRON_SECRET>
 ```
 
-Implementação: `apps/web/src/app/api/cron/due-reminders/route.ts`
-
 ## Migrations
-
-Rodar antes ou após deploy:
 
 ```bash
 DATABASE_URL=<prod> pnpm db:migrate
 ```
 
-Ou CI step dedicado (não auto na Vercel build por padrão).
-
-## PWA
-
-- `apps/web/public/manifest.webmanifest`
-- Ícones: `public/icons/icon-192.png`, `icon-512.png`
-- `start_url`: `/dashboard`
+Banco vazio via SQL Editor: `packages/db/drizzle/bootstrap-neon.sql`.
 
 ## Domínios Clerk
 
@@ -78,13 +81,14 @@ Adicionar domínio Vercel nas allowed origins do Clerk Dashboard.
 - Env vars de Preview no Vercel
 - Neon branch database recomendado
 - Clerk keys de dev/staging
+- Sem `API_URL` (API embutida)
 
 ## Monitoramento
 
 - Vercel Analytics (opcional)
-- Logs: Vercel Functions → cron e server actions
+- Logs: Vercel Functions → `/api/v1` e cron
 - Resend dashboard para deliverability
 
 ## Rollback
 
-Revert deploy na Vercel; migrations são forward-only — planejar down migrations manualmente se necessário.
+Revert deploy na Vercel; migrations são forward-only.

@@ -13,7 +13,7 @@ import {
 } from '@tim/domain';
 import { useMemo, useState, useTransition } from 'react';
 import { CheckCircle2, Calculator } from 'lucide-react';
-import { createFinancingAction } from '@/server/actions';
+import { createFinancingAction } from '@/lib/api/mutations';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
@@ -23,7 +23,7 @@ import { MoneyInput } from '@/components/ui/money-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { runWithToast } from '@/lib/action-toast';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
 import {
   Table,
   TableBody,
@@ -104,6 +104,7 @@ export function FinancingForm({
   defaultCostCenterId,
 }: FinancingFormProps): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
   const [category, setCategory] = useState<FinancingCategory>('vehicle');
   const [system, setSystem] = useState<AmortizationSystem>('price');
   const [principal, setPrincipal] = useState('80000');
@@ -200,9 +201,10 @@ export function FinancingForm({
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               try {
-                await runWithToast(() => createFinancingAction(formData), {
+                await run(() => createFinancingAction(formData), {
                   loading: 'Gravando financiamento…',
                   success: 'Financiamento gravado',
+                  invalidate: 'financing',
                 });
               } catch {
                 // toast já exibido

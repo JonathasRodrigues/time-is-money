@@ -1,11 +1,13 @@
 import Link from 'next/link';
-import { isDemoMode } from '@tim/mocks';
+import { isDemoMode, isMockApiMode } from '@tim/mocks';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 import { shouldUseClerk } from '@/components/auth-shell';
 
 export default async function HomePage(): Promise<React.ReactElement> {
   const demo = isDemoMode();
+  const mockApi = isMockApiMode();
+  const offlineUi = demo || mockApi;
   const useClerk = shouldUseClerk();
   const clerk = useClerk ? await import('@clerk/nextjs') : null;
 
@@ -49,10 +51,10 @@ export default async function HomePage(): Promise<React.ReactElement> {
                 <Link href="/sign-in">
                   <Button variant="secondary">Entrar</Button>
                 </Link>
-                {demo ? (
+                {offlineUi ? (
                   <Link href="/dashboard">
                     <Button className="bg-white text-[#0f1c2e] hover:bg-white/90">
-                      Abrir demo
+                      {mockApi ? 'Abrir mock' : 'Abrir demo'}
                     </Button>
                   </Link>
                 ) : null}
@@ -111,24 +113,25 @@ export default async function HomePage(): Promise<React.ReactElement> {
                     Ver cadastro
                   </Button>
                 </Link>
-                {demo ? (
+                {offlineUi ? (
                   <Link href="/dashboard">
                     <Button
                       size="lg"
                       variant="outline"
                       className="border-white/30 bg-transparent text-white hover:bg-white/10"
                     >
-                      Abrir demo
+                      {mockApi ? 'Abrir mock' : 'Abrir demo'}
                     </Button>
                   </Link>
                 ) : null}
               </>
             )}
           </div>
-          {demo ? (
+          {offlineUi ? (
             <p className="text-sm text-[#9aa6b5]">
-              Modo demo ativo — a home e as telas de acesso ficam abertas para revisar o visual. O
-              app continua em{' '}
+              {mockApi
+                ? 'Modo mock ativo — UI com dados em memória, sem API nem banco. App em '
+                : 'Modo demo ativo — a home e as telas de acesso ficam abertas para revisar o visual. O app continua em '}
               <Link href="/dashboard" className="underline underline-offset-2">
                 /dashboard
               </Link>

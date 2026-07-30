@@ -14,7 +14,11 @@
     "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL",
     "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL",
     "NEXT_PUBLIC_APP_URL",
-    "DEMO_MODE"
+    "API_URL",
+    "PORT",
+    "DEMO_MODE",
+    "MOCK_API",
+    "NEXT_PUBLIC_MOCK_API"
   ],
   "tasks": {
     "build": {

@@ -97,6 +97,45 @@ export function FinancingContractCard({
     [installments],
   );
 
+  const planFinancingOption = useMemo(
+    () => ({
+      id: financingId,
+      name,
+      category,
+      balanceCents: financingPayoffContext?.balanceCents ?? remainingCents,
+      system,
+      annualRateBps,
+      installmentAmountCents,
+      amortizationCents: financingPayoffContext?.amortizationCents ?? amortizeCents,
+      firstDueOn: nextPending?.dueOn ?? firstDueOn,
+      pendingInstallments: pendingInstallments.map((item) => ({
+        number: item.number,
+        dueOn: item.dueOn,
+        principalCents:
+          item.principalCents > 0
+            ? item.principalCents
+            : Math.max(0, item.amountCents - item.interestCents),
+        amountCents: item.amountCents,
+        interestCents: item.interestCents,
+      })),
+    }),
+    [
+      financingId,
+      name,
+      category,
+      financingPayoffContext?.balanceCents,
+      financingPayoffContext?.amortizationCents,
+      remainingCents,
+      system,
+      annualRateBps,
+      installmentAmountCents,
+      amortizeCents,
+      nextPending?.dueOn,
+      firstDueOn,
+      pendingInstallments,
+    ],
+  );
+
   const selectedPending = useMemo(
     () => pendingInstallments.filter((item) => selectedIds.has(item.id)),
     [pendingInstallments, selectedIds],
@@ -207,28 +246,34 @@ export function FinancingContractCard({
         ) : null}
 
         {pendingCount > 0 && potAccounts && planCenters && financingPayoffContext ? (
-          <NewPlanSheet
-            centers={planCenters}
-            potAccounts={potAccounts}
-            financings={[
-              {
-                id: financingId,
-                name,
-                balanceCents: financingPayoffContext.balanceCents,
-                system,
-                annualRateBps,
-                installmentAmountCents,
-                amortizationCents: financingPayoffContext.amortizationCents,
-                firstDueOn: nextPending?.dueOn ?? firstDueOn,
-              },
-            ]}
-            presetFinancingId={financingId}
-            trigger={
-              <Button type="button" variant="outline" size="sm">
-                Planejar quitação
-              </Button>
-            }
-          />
+          <div className="flex flex-wrap gap-2">
+            {category === 'real_estate' ? (
+              <NewPlanSheet
+                centers={planCenters}
+                potAccounts={potAccounts}
+                financings={[planFinancingOption]}
+                presetFinancingId={financingId}
+                presetKind="real_estate_amortization"
+                trigger={
+                  <Button type="button" variant="outline" size="sm">
+                    Planejar amortização
+                  </Button>
+                }
+              />
+            ) : null}
+            <NewPlanSheet
+              centers={planCenters}
+              potAccounts={potAccounts}
+              financings={[planFinancingOption]}
+              presetFinancingId={financingId}
+              presetKind="financing_payoff"
+              trigger={
+                <Button type="button" variant="outline" size="sm">
+                  Planejar quitação
+                </Button>
+              }
+            />
+          </div>
         ) : null}
       </div>
 

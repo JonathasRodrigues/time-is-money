@@ -113,6 +113,8 @@ export function DashboardPageSkeleton(): React.ReactElement {
       <FilterBarSkeleton />
       <KpiRowSkeleton count={3} />
       <KpiRowSkeleton count={3} />
+      <CardGridSkeleton count={1} />
+      <KpiRowSkeleton count={3} />
       <CardGridSkeleton count={2} />
       <TableSkeleton rows={5} />
     </div>

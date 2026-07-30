@@ -13,10 +13,14 @@ import {
   formatMonthsAsDuration,
   labelPayoffExtraRules,
   monthsUntil,
+  pickTrailingInstallmentsForAmortization,
+  recommendPayoffPlansForTargetDate,
+  redistributeContributionsToTarget,
   simulatePayoffByTargetDate,
   simulatePayoffPlan,
   simulatePayoffWithExtraPayment,
   simulateSavingsGoal,
+  simulateSingleAmortization,
   sumPlanItems,
 } from './planning';
 
@@ -204,6 +208,173 @@ describe('simulatePayoffByTargetDate', () => {
   });
 });
 
+describe('simulateSingleAmortization', () => {
+  const priceBase = {
+    balanceCents: 100_000_00,
+    system: 'price' as const,
+    annualRateBps: 1200,
+    installmentAmountCents: 1_500_00,
+    firstDueOn: '2026-01-15',
+    extraCents: 20_000_00,
+  };
+
+  const sacBase = {
+    balanceCents: 120_000_00,
+    system: 'sac' as const,
+    annualRateBps: 960,
+    amortizationCents: 1_000_00,
+    installmentAmountCents: 1_500_00,
+    firstDueOn: '2026-03-01',
+    extraCents: 24_000_00,
+  };
+
+  it('Price reduce_term: mantém parcela e encurta prazo', () => {
+    const result = simulateSingleAmortization({
+      ...priceBase,
+      applicationMode: 'reduce_term',
+    });
+    expect(result.paymentAfterCents).toBe(result.paymentBeforeCents);
+    expect(result.paymentBeforeCents).toBe(1_500_00);
+    expect(result.monthsAfter).toBeLessThan(result.monthsBefore);
+    expect(result.interestSavedCents).toBeGreaterThan(0);
+    expect(result.payoffDateAfter).not.toBeNull();
+    expect(result.scheduleAfter.length).toBe(result.monthsAfter);
+  });
+
+  it('Price reduce_payment: mantém prazo e reduz parcela', () => {
+    const result = simulateSingleAmortization({
+      ...priceBase,
+      applicationMode: 'reduce_payment',
+    });
+    expect(result.monthsAfter).toBe(result.monthsBefore);
+    expect(result.paymentAfterCents).toBeLessThan(result.paymentBeforeCents);
+    expect(result.interestSavedCents).toBeGreaterThan(0);
+  });
+
+  it('Price: reduzir prazo economiza mais juros que reduzir parcela', () => {
+    const reduceTerm = simulateSingleAmortization({
+      ...priceBase,
+      applicationMode: 'reduce_term',
+    });
+    const reducePayment = simulateSingleAmortization({
+      ...priceBase,
+      applicationMode: 'reduce_payment',
+    });
+    expect(reduceTerm.interestSavedCents).toBeGreaterThan(reducePayment.interestSavedCents);
+    expect(reduceTerm.monthsAfter).toBeLessThan(reducePayment.monthsAfter);
+  });
+
+  it('SAC reduce_term: mantém amortização periódica e encurta prazo', () => {
+    const result = simulateSingleAmortization({
+      ...sacBase,
+      applicationMode: 'reduce_term',
+    });
+    expect(result.paymentBeforeCents).toBe(1_000_00);
+    expect(result.paymentAfterCents).toBe(1_000_00);
+    expect(result.monthsAfter).toBeLessThan(result.monthsBefore);
+    expect(result.interestSavedCents).toBeGreaterThan(0);
+  });
+
+  it('SAC reduce_payment: mantém prazo e reduz amortização periódica', () => {
+    const result = simulateSingleAmortization({
+      ...sacBase,
+      applicationMode: 'reduce_payment',
+    });
+    expect(result.monthsAfter).toBe(result.monthsBefore);
+    expect(result.paymentAfterCents).toBeLessThan(result.paymentBeforeCents);
+    expect(result.interestSavedCents).toBeGreaterThan(0);
+  });
+
+  it('sem extra: cenário igual ao baseline', () => {
+    const result = simulateSingleAmortization({
+      ...priceBase,
+      extraCents: 0,
+      applicationMode: 'reduce_term',
+    });
+    expect(result.monthsAfter).toBe(result.monthsBefore);
+    expect(result.interestSavedCents).toBe(0);
+    expect(result.paymentAfterCents).toBe(result.paymentBeforeCents);
+    expect(result.trailingSelection).toBeNull();
+  });
+
+  it('com cronograma: escolhe parcelas do final até o valor', () => {
+    const installments = Array.from({ length: 10 }, (_, index) => ({
+      number: index + 1,
+      dueOn: `2026-${String(index + 1).padStart(2, '0')}-15`,
+      principalCents: 10_000_00,
+      status: 'pending',
+    }));
+    const result = simulateSingleAmortization({
+      ...priceBase,
+      extraCents: 25_000_00,
+      applicationMode: 'reduce_term',
+      installments,
+    });
+    expect(result.trailingSelection).not.toBeNull();
+    expect(result.trailingSelection?.appliedPrincipalCents).toBe(25_000_00);
+    expect(result.trailingSelection?.fromNumber).toBe(8);
+    expect(result.trailingSelection?.toNumber).toBe(10);
+    expect(result.trailingSelection?.fullyRemovedCount).toBe(2);
+    expect(result.trailingSelection?.selected.some((row) => row.partial)).toBe(true);
+    expect(result.extraCents).toBe(25_000_00);
+    expect(result.monthsAfter).toBeLessThan(result.monthsBefore);
+  });
+});
+
+describe('pickTrailingInstallmentsForAmortization', () => {
+  it('pega do final e permite parcial na borda', () => {
+    const pick = pickTrailingInstallmentsForAmortization({
+      targetPrincipalCents: 25_000_00,
+      installments: [
+        { number: 1, dueOn: '2026-01-01', principalCents: 10_000_00, status: 'pending' },
+        { number: 2, dueOn: '2026-02-01', principalCents: 10_000_00, status: 'pending' },
+        { number: 3, dueOn: '2026-03-01', principalCents: 10_000_00, status: 'pending' },
+      ],
+    });
+    expect(pick.appliedPrincipalCents).toBe(25_000_00);
+    expect(pick.selected.map((row) => row.number)).toEqual([1, 2, 3]);
+    expect(pick.selected.find((row) => row.number === 1)?.partial).toBe(true);
+    expect(pick.selected.find((row) => row.number === 1)?.principalCents).toBe(5_000_00);
+    expect(pick.fullyRemovedCount).toBe(2);
+  });
+});
+
+describe('recommendPayoffPlansForTargetDate', () => {
+  it('sugere planos para quitar em prazo menor', () => {
+    const plans = recommendPayoffPlansForTargetDate({
+      balanceCents: 100_000_00,
+      system: 'price',
+      annualRateBps: 1200,
+      installmentAmountCents: 1_500_00,
+      firstDueOn: '2026-01-15',
+      targetDate: '2031-01-15',
+      fromDate: '2026-01-15',
+    });
+    expect(plans.length).toBeGreaterThan(0);
+    const meeting = plans.filter((plan) => plan.meetsTarget);
+    expect(meeting.length).toBeGreaterThan(0);
+    expect(
+      meeting.some((plan) => plan.rules.some((rule) => rule.type === 'extra_installments')),
+    ).toBe(true);
+    expect(meeting.some((plan) => plan.rules.some((rule) => rule.type === 'monthly_cents'))).toBe(
+      true,
+    );
+  });
+
+  it('diz que o cronograma atual basta quando a meta é folgada', () => {
+    const plans = recommendPayoffPlansForTargetDate({
+      balanceCents: 10_000_00,
+      system: 'price',
+      annualRateBps: 1200,
+      installmentAmountCents: 2_000_00,
+      firstDueOn: '2026-01-15',
+      targetDate: '2040-01-15',
+      fromDate: '2026-01-15',
+    });
+    expect(plans[0]?.id).toBe('already-on-track');
+  });
+});
+
 describe('estimateFinancingResidual', () => {
   it('usa balanceAfter da última parcela paga', () => {
     const result = estimateFinancingResidual({
@@ -288,6 +459,38 @@ describe('applyGapToLastContribution', () => {
     });
     const adjusted = applyGapToLastContribution(base, 20_000);
     expect(adjusted[1]?.amountCents).toBe(100_000);
+  });
+});
+
+describe('redistributeContributionsToTarget', () => {
+  it('divide o restante da meta igualmente e joga o resto no último mês', () => {
+    const base = buildMonthlyContributionSchedule({
+      startOn: '2026-01-01',
+      monthCount: 3,
+      monthlyCents: 100_00,
+    });
+    const rows = redistributeContributionsToTarget({
+      contributions: base,
+      targetCents: 10_000_00,
+      savedCents: 1_000_00,
+    });
+    expect(rows.map((row) => row.amountCents)).toEqual([3_000_00, 3_000_00, 3_000_00]);
+  });
+
+  it('respeita resto de divisão em centavos no último mês', () => {
+    const base = buildMonthlyContributionSchedule({
+      startOn: '2026-01-01',
+      monthCount: 3,
+      monthlyCents: 0,
+    });
+    const rows = redistributeContributionsToTarget({
+      contributions: base,
+      targetCents: 100_01,
+      savedCents: 0,
+    });
+    expect(rows[0]?.amountCents).toBe(3_333);
+    expect(rows[1]?.amountCents).toBe(3_333);
+    expect(rows[2]?.amountCents).toBe(3_335);
   });
 });
 

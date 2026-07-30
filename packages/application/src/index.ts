@@ -8,18 +8,27 @@ import {
   auditLogs,
   categories,
   costCenters,
+  creditCardInvoices,
+  creditCards,
   financings,
   installments,
+  institutions,
   planItems,
   planContributions,
   plans,
   transactionSeries,
   transactions,
+  userPreferences,
 } from '@tim/db';
 import {
+  assertAccountDebitBalance,
+  assertCardPurchase,
+  assertPayInvoice,
   assertTransferAllowed,
   addMonths,
   buildAmortizationSchedule,
+  cardHasCredit,
+  paymentMethodMovesAccountBalance,
   dueOnForMonth,
   rebuildRemainingSchedule,
   shiftYearMonth,
@@ -27,12 +36,14 @@ import {
   type AmortizationSystem,
 } from '@tim/domain';
 import type {
+  CreateCreditCardInput,
   CreateFinancingInput,
   CreateMonthlySeriesInput,
   CreatePendingTransactionInput,
   CreatePlanInput,
   CreateTransactionInput,
   CreateTransferInput,
+  PayCreditCardInvoiceInput,
   PayInstallmentInput,
   PayInstallmentsBulkInput,
   PayTransactionInput,
@@ -41,6 +52,7 @@ import type {
   SoftDeleteFinancingInput,
   SoftDeletePlanInput,
   SoftDeleteTransactionInput,
+  UpdateCreditCardInput,
   UpdatePendingAmountInput,
   UpdatePlanInput,
   UpsertPlanItemsInput,
@@ -48,12 +60,14 @@ import type {
   UpdateTransactionInput,
 } from '@tim/validators';
 import {
+  createCreditCardSchema,
   createFinancingSchema,
   createMonthlySeriesSchema,
   createPendingTransactionSchema,
   createPlanSchema,
   createTransactionSchema,
   createTransferSchema,
+  payCreditCardInvoiceSchema,
   payInstallmentSchema,
   payInstallmentsBulkSchema,
   payTransactionSchema,
@@ -62,20 +76,28 @@ import {
   softDeleteFinancingSchema,
   softDeletePlanSchema,
   softDeleteTransactionSchema,
+  updateCreditCardSchema,
   updatePendingAmountSchema,
   updatePlanSchema,
   upsertPlanItemsSchema,
   upsertPlanContributionsSchema,
   updateTransactionSchema,
 } from '@tim/validators';
-import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
+import type { AppContext } from './context';
+import {
+  getOrCreateInvoiceForPurchase,
+  refreshCardInvoiceBalanceCache,
+  sumInvoiceBalanceCents,
+} from './card-invoices';
 
-export interface AppContext {
-  db: Database;
-  session: AuthSession | null;
-  encryptionSecret: string;
-}
+export type { AppContext } from './context';
+export {
+  closeDueCreditCardInvoices,
+  getOrCreateInvoiceForPurchase,
+  refreshCardInvoiceBalanceCache,
+} from './card-invoices';
 
 function duplicateHash(input: {
   occurredOn: string;
@@ -135,35 +157,156 @@ export async function createTransaction(
   const status = input.status ?? 'paid';
   const isPaid = status === 'paid';
   const dueOn = input.dueOn ?? input.occurredOn;
+  const creditCardId = input.creditCardId ?? null;
+  if (creditCardId && !isPaid) {
+    throw new Error(
+      'Compra no cartão deve ser registrada como já paga — entra na fatura do ciclo, não em contas a pagar.',
+    );
+  }
+  const paymentRail = creditCardId ? null : (input.paymentRail ?? null);
 
-  const [row] = await ctx.db
-    .insert(transactions)
-    .values({
-      householdId: session.householdId,
-      costCenterId: input.costCenterId,
-      categoryId: input.categoryId,
-      accountId: input.accountId,
+  let resolvedAccountId = input.accountId;
+  let creditCardInvoiceId: string | null = null;
+
+  if (creditCardId) {
+    const [card] = await ctx.db
+      .select()
+      .from(creditCards)
+      .where(
+        and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
+      )
+      .limit(1);
+    if (!card) {
+      throw new Error('Cartão inválido');
+    }
+    assertCardPurchase({
       type: input.type,
-      status,
       amountCents: input.amountCents,
-      occurredOn: input.occurredOn,
-      dueOn,
-      paidOn: isPaid ? input.occurredOn : null,
-      description: input.description,
-      notesEncrypted,
-      tags: input.tags ?? [],
-      source,
-      duplicateHash: duplicateHash(input),
-      createdBy: session.userId,
-    })
-    .returning();
+      cardArchived: card.isArchived,
+    });
+    if (!cardHasCredit(card.cardMode)) {
+      throw new Error('Cartão não possui crédito');
+    }
+    resolvedAccountId = card.paymentAccountId;
+  } else {
+    const [account] = await ctx.db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)))
+      .limit(1);
+    if (!account) {
+      throw new Error('Conta inválida');
+    }
+  }
+
+  const row = await ctx.db.transaction(async (dbTx) => {
+    if (creditCardId && isPaid && input.type === 'expense') {
+      const [card] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
+        )
+        .limit(1)
+        .for('update');
+      if (!card) {
+        throw new Error('Cartão inválido');
+      }
+      const invoice = await getOrCreateInvoiceForPurchase(dbTx, {
+        householdId: session.householdId,
+        card,
+        purchaseOn: input.occurredOn,
+      });
+      creditCardInvoiceId = invoice.id;
+    }
+
+    const movesBalance =
+      isPaid &&
+      !creditCardId &&
+      paymentMethodMovesAccountBalance({
+        type: 'account',
+        paymentRail: paymentRail ?? 'pix',
+      });
+
+    if (movesBalance) {
+      const [locked] = await dbTx
+        .select()
+        .from(accounts)
+        .where(
+          and(eq(accounts.id, resolvedAccountId), eq(accounts.householdId, session.householdId)),
+        )
+        .limit(1)
+        .for('update');
+      if (!locked) {
+        throw new Error('Conta inválida');
+      }
+      if (locked.isArchived) {
+        throw new Error('Conta está arquivada');
+      }
+      const delta = input.type === 'expense' ? -input.amountCents : input.amountCents;
+      if (delta < 0) {
+        assertAccountDebitBalance({
+          amountCents: input.amountCents,
+          accountBalanceCents: locked.balanceCents,
+          accountArchived: locked.isArchived,
+        });
+      }
+      await dbTx
+        .update(accounts)
+        .set({
+          balanceCents: locked.balanceCents + delta,
+          updatedAt: new Date(),
+        })
+        .where(eq(accounts.id, locked.id));
+    }
+
+    const [created] = await dbTx
+      .insert(transactions)
+      .values({
+        householdId: session.householdId,
+        costCenterId: input.costCenterId,
+        categoryId: input.categoryId,
+        accountId: resolvedAccountId,
+        creditCardId,
+        creditCardInvoiceId,
+        paymentRail,
+        type: input.type,
+        status,
+        amountCents: input.amountCents,
+        occurredOn: input.occurredOn,
+        dueOn,
+        paidOn: isPaid ? input.occurredOn : null,
+        description: input.description,
+        notesEncrypted,
+        tags: input.tags ?? [],
+        source,
+        duplicateHash: duplicateHash(input),
+        createdBy: session.userId,
+      })
+      .returning();
+
+    if (creditCardId && isPaid && input.type === 'expense') {
+      await refreshCardInvoiceBalanceCache(dbTx, {
+        householdId: session.householdId,
+        creditCardId,
+      });
+    }
+
+    return created;
+  });
 
   await writeAudit(ctx, {
     action: 'create',
     resourceType: 'transaction',
     resourceId: row?.id,
     source,
-    metadata: { amountCents: input.amountCents, type: input.type, status },
+    metadata: {
+      amountCents: input.amountCents,
+      type: input.type,
+      status,
+      creditCardId,
+      paymentRail,
+    },
   });
 
   return row;
@@ -187,6 +330,7 @@ export async function createPendingTransaction(
 
   const installmentCount = input.installmentCount ?? 1;
   const totalCents = input.amountCents ?? null;
+  const paymentRail = input.paymentRail ?? null;
 
   if (installmentCount === 1) {
     const amountCents = totalCents;
@@ -197,6 +341,7 @@ export async function createPendingTransaction(
         costCenterId: input.costCenterId,
         categoryId: input.categoryId,
         accountId: input.accountId,
+        paymentRail,
         type: input.type,
         status: 'pending',
         amountCents,
@@ -251,6 +396,7 @@ export async function createPendingTransaction(
         costCenterId: input.costCenterId,
         categoryId: input.categoryId,
         accountId: input.accountId,
+        paymentRail,
         type: input.type,
         status: 'pending',
         amountCents,
@@ -311,6 +457,7 @@ export async function createMonthlySeries(ctx: AppContext, raw: CreateMonthlySer
       interval: 'monthly',
       dueDay: input.dueDay,
       defaultAmountCents: input.defaultAmountCents ?? null,
+      defaultPaymentRail: input.paymentRail ?? null,
       isActive: true,
     })
     .returning();
@@ -384,6 +531,7 @@ async function ensureSeriesInstance(ctx: AppContext, seriesId: string, yearMonth
       costCenterId: series.costCenterId,
       categoryId: series.categoryId,
       accountId: series.accountId,
+      paymentRail: series.defaultPaymentRail,
       type: series.type,
       status: 'pending',
       amountCents,
@@ -541,46 +689,134 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
     throw new Error('Conta inválida');
   }
 
+  const creditCardId = input.creditCardId === undefined ? tx.creditCardId : input.creditCardId;
+  const paymentRail =
+    creditCardId != null
+      ? null
+      : input.paymentRail === undefined
+        ? tx.paymentRail
+        : input.paymentRail;
+
+  if (creditCardId) {
+    assertCardPurchase({
+      type: input.type,
+      amountCents: input.amountCents ?? 0,
+    });
+    const [card] = await ctx.db
+      .select()
+      .from(creditCards)
+      .where(
+        and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
+      )
+      .limit(1);
+    if (!card) {
+      throw new Error('Cartão inválido');
+    }
+    assertCardPurchase({
+      type: input.type,
+      amountCents: input.amountCents ?? 1,
+      cardArchived: card.isArchived,
+    });
+  }
+
   const isPaid = input.status === 'paid';
   const amountCents = input.amountCents ?? null;
   const dueOn = isPaid ? (tx.dueOn ?? input.date) : input.date;
   const paidOn = isPaid ? input.date : null;
   const occurredOn = input.date;
 
-  const [row] = await ctx.db
-    .update(transactions)
-    .set({
-      costCenterId: input.costCenterId,
-      categoryId: input.categoryId,
-      accountId: input.accountId,
-      type: input.type,
-      status: input.status,
-      amountCents,
-      occurredOn,
-      dueOn,
-      paidOn,
-      description: input.description || null,
-      updatedAt: new Date(),
-    })
-    .where(eq(transactions.id, tx.id))
-    .returning();
+  const prevInvoiceDelta =
+    tx.creditCardId && tx.status === 'paid' && tx.type === 'expense' && tx.amountCents != null
+      ? tx.amountCents
+      : 0;
+  const nextInvoiceDelta =
+    creditCardId && isPaid && input.type === 'expense' && amountCents != null ? amountCents : 0;
 
-  if (tx.installmentId) {
-    await ctx.db
-      .update(installments)
+  const row = await ctx.db.transaction(async (dbTx) => {
+    const [updated] = await dbTx
+      .update(transactions)
       .set({
-        status: isPaid ? 'paid' : 'pending',
+        costCenterId: input.costCenterId,
+        categoryId: input.categoryId,
+        accountId: input.accountId,
+        creditCardId,
+        paymentRail,
+        type: input.type,
+        status: input.status,
+        amountCents,
+        occurredOn,
+        dueOn,
         paidOn,
-        ...(amountCents != null ? { amountCents } : {}),
-        transactionId: isPaid ? tx.id : null,
+        description: input.description || null,
+        updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(installments.id, tx.installmentId),
-          eq(installments.householdId, session.householdId),
-        ),
-      );
-  }
+      .where(eq(transactions.id, tx.id))
+      .returning();
+
+    if (tx.installmentId) {
+      await dbTx
+        .update(installments)
+        .set({
+          status: isPaid ? 'paid' : 'pending',
+          paidOn,
+          ...(amountCents != null ? { amountCents } : {}),
+          transactionId: isPaid ? tx.id : null,
+        })
+        .where(
+          and(
+            eq(installments.id, tx.installmentId),
+            eq(installments.householdId, session.householdId),
+          ),
+        );
+    }
+
+    // Ajusta fatura: remove efeito antigo e aplica o novo.
+    if (tx.creditCardId && prevInvoiceDelta > 0) {
+      const [oldCard] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(
+            eq(creditCards.id, tx.creditCardId),
+            eq(creditCards.householdId, session.householdId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (oldCard) {
+        await dbTx
+          .update(creditCards)
+          .set({
+            invoiceBalanceCents: Math.max(0, oldCard.invoiceBalanceCents - prevInvoiceDelta),
+            updatedAt: new Date(),
+          })
+          .where(eq(creditCards.id, oldCard.id));
+      }
+    }
+
+    if (creditCardId && nextInvoiceDelta > 0) {
+      const [newCard] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
+        )
+        .limit(1)
+        .for('update');
+      if (!newCard) {
+        throw new Error('Cartão inválido');
+      }
+      await dbTx
+        .update(creditCards)
+        .set({
+          invoiceBalanceCents: newCard.invoiceBalanceCents + nextInvoiceDelta,
+          updatedAt: new Date(),
+        })
+        .where(eq(creditCards.id, newCard.id));
+    }
+
+    return updated;
+  });
 
   await writeAudit(ctx, {
     action: 'update',
@@ -591,6 +827,8 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
       status: input.status,
       amountCents,
       date: input.date,
+      creditCardId,
+      paymentRail,
     },
   });
 
@@ -621,36 +859,67 @@ export async function softDeleteTransaction(ctx: AppContext, raw: SoftDeleteTran
     throw new Error('Lançamento não encontrado');
   }
 
-  await ctx.db
-    .update(transactions)
-    .set({
-      deletedAt: new Date(),
-      installmentId: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(transactions.id, tx.id));
-
-  if (tx.installmentId) {
-    await ctx.db
-      .update(installments)
+  await ctx.db.transaction(async (dbTx) => {
+    await dbTx
+      .update(transactions)
       .set({
-        status: 'pending',
-        paidOn: null,
-        transactionId: null,
+        deletedAt: new Date(),
+        installmentId: null,
+        updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(installments.id, tx.installmentId),
-          eq(installments.householdId, session.householdId),
-        ),
-      );
-  }
+      .where(eq(transactions.id, tx.id));
+
+    if (tx.installmentId) {
+      await dbTx
+        .update(installments)
+        .set({
+          status: 'pending',
+          paidOn: null,
+          transactionId: null,
+        })
+        .where(
+          and(
+            eq(installments.id, tx.installmentId),
+            eq(installments.householdId, session.householdId),
+          ),
+        );
+    }
+
+    if (
+      tx.creditCardId &&
+      tx.status === 'paid' &&
+      tx.type === 'expense' &&
+      tx.amountCents != null &&
+      tx.amountCents > 0
+    ) {
+      const [card] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(
+            eq(creditCards.id, tx.creditCardId),
+            eq(creditCards.householdId, session.householdId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (card) {
+        await dbTx
+          .update(creditCards)
+          .set({
+            invoiceBalanceCents: Math.max(0, card.invoiceBalanceCents - tx.amountCents),
+            updatedAt: new Date(),
+          })
+          .where(eq(creditCards.id, card.id));
+      }
+    }
+  });
 
   await writeAudit(ctx, {
     action: 'delete',
     resourceType: 'transaction',
     resourceId: tx.id,
-    metadata: { installmentId: tx.installmentId },
+    metadata: { installmentId: tx.installmentId, creditCardId: tx.creditCardId },
   });
 }
 
@@ -683,35 +952,208 @@ export async function payTransaction(ctx: AppContext, raw: PayTransactionInput) 
     throw new Error('Informe o valor para pagar');
   }
 
-  const [row] = await ctx.db
-    .update(transactions)
-    .set({
-      status: 'paid',
-      amountCents,
-      paidOn: input.paidOn,
-      occurredOn: input.paidOn,
-      updatedAt: new Date(),
-    })
-    .where(eq(transactions.id, tx.id))
-    .returning();
+  if (input.creditCardId && tx.type !== 'expense') {
+    throw new Error('Somente despesas podem ser pagas no cartão');
+  }
 
-  if (tx.installmentId) {
-    await ctx.db
-      .update(installments)
+  const payWithCardId = input.creditCardId ?? null;
+
+  const row = await ctx.db.transaction(async (dbTx) => {
+    if (payWithCardId) {
+      const [card] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(eq(creditCards.id, payWithCardId), eq(creditCards.householdId, session.householdId)),
+        )
+        .limit(1)
+        .for('update');
+      if (!card) {
+        throw new Error('Cartão não encontrado');
+      }
+      assertCardPurchase({
+        type: 'expense',
+        amountCents,
+        cardArchived: card.isArchived,
+      });
+      if (!cardHasCredit(card.cardMode)) {
+        throw new Error('Cartão não possui crédito');
+      }
+
+      const invoice = await getOrCreateInvoiceForPurchase(dbTx, {
+        householdId: session.householdId,
+        card,
+        purchaseOn: input.paidOn,
+      });
+
+      const [paid] = await dbTx
+        .update(transactions)
+        .set({
+          status: 'paid',
+          amountCents,
+          paidOn: input.paidOn,
+          occurredOn: input.paidOn,
+          accountId: card.paymentAccountId,
+          creditCardId: card.id,
+          creditCardInvoiceId: invoice.id,
+          paymentRail: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, tx.id))
+        .returning();
+
+      if (tx.installmentId) {
+        await dbTx
+          .update(installments)
+          .set({
+            status: 'paid',
+            paidOn: input.paidOn,
+            amountCents,
+            transactionId: tx.id,
+          })
+          .where(eq(installments.id, tx.installmentId));
+      }
+
+      await refreshCardInvoiceBalanceCache(dbTx, {
+        householdId: session.householdId,
+        creditCardId: card.id,
+      });
+
+      return paid;
+    }
+
+    const accountId = input.accountId ?? tx.accountId;
+    const [account] = await dbTx
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, accountId), eq(accounts.householdId, session.householdId)))
+      .limit(1);
+
+    if (!account) {
+      throw new Error('Conta não encontrada');
+    }
+
+    if (input.applyToBalance === true && account.isArchived) {
+      throw new Error('Conta está arquivada');
+    }
+
+    // Conta + PIX/débito/TED (e receber): move saldo por padrão. Crédito não.
+    const applyToBalance = paymentMethodMovesAccountBalance({
+      type: 'account',
+      paymentRail: input.paymentRail ?? 'pix',
+    })
+      ? (input.applyToBalance ?? true)
+      : false;
+
+    if (applyToBalance) {
+      const [locked] = await dbTx
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.householdId, session.householdId)))
+        .limit(1)
+        .for('update');
+
+      if (!locked) {
+        throw new Error('Conta não encontrada');
+      }
+      if (locked.isArchived) {
+        throw new Error('Conta está arquivada');
+      }
+
+      const delta = tx.type === 'expense' ? -amountCents : amountCents;
+      if (delta < 0) {
+        assertAccountDebitBalance({
+          amountCents,
+          accountBalanceCents: locked.balanceCents,
+          accountArchived: locked.isArchived,
+        });
+      }
+
+      await dbTx
+        .update(accounts)
+        .set({
+          balanceCents: locked.balanceCents + delta,
+          updatedAt: new Date(),
+        })
+        .where(eq(accounts.id, locked.id));
+    }
+
+    let creditCardInvoiceId = tx.creditCardInvoiceId;
+    if (tx.creditCardId && tx.type === 'expense' && amountCents > 0) {
+      const [card] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(
+            eq(creditCards.id, tx.creditCardId),
+            eq(creditCards.householdId, session.householdId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!card) {
+        throw new Error('Cartão não encontrado');
+      }
+      if (card.isArchived) {
+        throw new Error('Cartão está arquivado');
+      }
+      const invoice = await getOrCreateInvoiceForPurchase(dbTx, {
+        householdId: session.householdId,
+        card,
+        purchaseOn: input.paidOn,
+      });
+      creditCardInvoiceId = invoice.id;
+    }
+
+    const [paid] = await dbTx
+      .update(transactions)
       .set({
         status: 'paid',
-        paidOn: input.paidOn,
         amountCents,
-        transactionId: tx.id,
+        paidOn: input.paidOn,
+        occurredOn: input.paidOn,
+        accountId,
+        creditCardInvoiceId,
+        paymentRail: input.paymentRail === undefined ? tx.paymentRail : input.paymentRail,
+        updatedAt: new Date(),
       })
-      .where(eq(installments.id, tx.installmentId));
-  }
+      .where(eq(transactions.id, tx.id))
+      .returning();
+
+    if (tx.creditCardId && tx.type === 'expense') {
+      await refreshCardInvoiceBalanceCache(dbTx, {
+        householdId: session.householdId,
+        creditCardId: tx.creditCardId,
+      });
+    }
+
+    if (tx.installmentId) {
+      await dbTx
+        .update(installments)
+        .set({
+          status: 'paid',
+          paidOn: input.paidOn,
+          amountCents,
+          transactionId: tx.id,
+        })
+        .where(eq(installments.id, tx.installmentId));
+    }
+
+    return paid;
+  });
 
   await writeAudit(ctx, {
     action: 'pay',
     resourceType: 'transaction',
     resourceId: tx.id,
-    metadata: { amountCents, paidOn: input.paidOn, installmentId: tx.installmentId },
+    metadata: {
+      amountCents,
+      paidOn: input.paidOn,
+      installmentId: tx.installmentId,
+      accountId: row?.accountId,
+      creditCardId: payWithCardId ?? tx.creditCardId,
+      paymentMethod: payWithCardId ? 'credit_card' : 'account',
+    },
   });
 
   return row;
@@ -732,6 +1174,10 @@ export async function payTransactionsBulk(ctx: AppContext, raw: PayTransactionsB
       transactionId: item.transactionId,
       paidOn: item.paidOn,
       amountCents: item.amountCents,
+      accountId: item.accountId,
+      creditCardId: item.creditCardId,
+      paymentRail: item.paymentRail,
+      applyToBalance: item.applyToBalance,
     });
     results.push(row);
   }
@@ -746,6 +1192,68 @@ export async function payTransactionsBulk(ctx: AppContext, raw: PayTransactionsB
   });
 
   return results;
+}
+
+export async function confirmIncomeItem(
+  ctx: AppContext,
+  input: {
+    transactionId: string;
+    paidOn: string;
+    amountCents: number;
+    accountId?: string;
+    applyToBalance?: boolean;
+  },
+): Promise<{ redirectTo?: string }> {
+  const session = requireSession(ctx.session);
+  await payTransaction(ctx, {
+    householdId: session.householdId,
+    transactionId: input.transactionId,
+    paidOn: input.paidOn,
+    amountCents: input.amountCents,
+    accountId: input.accountId,
+    applyToBalance: input.applyToBalance,
+  });
+
+  const paidOn = input.paidOn;
+  const yearMonth = paidOn.slice(0, 7);
+  const [y, m] = yearMonth.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+  const start = `${yearMonth}-01`;
+  const end = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
+  const remaining = await ctx.db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.householdId, session.householdId),
+        eq(transactions.type, 'income'),
+        eq(transactions.status, 'pending'),
+        isNotNull(transactions.seriesId),
+        gte(transactions.dueOn, start),
+        lte(transactions.dueOn, end),
+      ),
+    )
+    .limit(1);
+
+  if (remaining.length === 0) {
+    await ctx.db
+      .update(userPreferences)
+      .set({
+        lastIncomeConfirmedMonth: yearMonth,
+        incomePromptSnoozedOn: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userPreferences.householdId, session.householdId),
+          eq(userPreferences.userId, session.userId),
+        ),
+      );
+    return { redirectTo: '/payments?flow=receive&payday=1' };
+  }
+
+  return {};
 }
 
 export async function createFinancing(ctx: AppContext, raw: CreateFinancingInput) {
@@ -1108,6 +1616,285 @@ export async function payInstallmentWithCategory(
   });
 
   return paid;
+}
+
+export async function createCreditCard(ctx: AppContext, raw: CreateCreditCardInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'settings.write');
+  const input = createCreditCardSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [institution] = await ctx.db
+    .select({ id: institutions.id })
+    .from(institutions)
+    .where(
+      and(
+        eq(institutions.id, input.institutionId),
+        eq(institutions.householdId, session.householdId),
+      ),
+    )
+    .limit(1);
+  if (!institution) {
+    throw new Error('Banco inválido');
+  }
+
+  const [paymentAccount] = await ctx.db
+    .select()
+    .from(accounts)
+    .where(
+      and(eq(accounts.id, input.paymentAccountId), eq(accounts.householdId, session.householdId)),
+    )
+    .limit(1);
+  if (!paymentAccount) {
+    throw new Error('Conta de pagamento inválida');
+  }
+
+  const [row] = await ctx.db
+    .insert(creditCards)
+    .values({
+      householdId: session.householdId,
+      institutionId: input.institutionId,
+      paymentAccountId: input.paymentAccountId,
+      name: input.name,
+      cardMode: input.cardMode,
+      lastFour: input.lastFour ?? null,
+      creditLimitCents: input.cardMode === 'debit' ? 0 : input.creditLimitCents,
+      invoiceBalanceCents: input.cardMode === 'debit' ? 0 : input.invoiceBalanceCents,
+      closingDay: input.cardMode === 'debit' ? 1 : input.closingDay,
+      dueDay: input.cardMode === 'debit' ? 1 : input.dueDay,
+    })
+    .returning();
+
+  await writeAudit(ctx, {
+    action: 'create',
+    resourceType: 'credit_card',
+    resourceId: row?.id,
+    metadata: { name: input.name, institutionId: input.institutionId },
+  });
+
+  return row;
+}
+
+export async function updateCreditCard(ctx: AppContext, raw: UpdateCreditCardInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'settings.write');
+  const input = updateCreditCardSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const [existing] = await ctx.db
+    .select()
+    .from(creditCards)
+    .where(
+      and(eq(creditCards.id, input.creditCardId), eq(creditCards.householdId, session.householdId)),
+    )
+    .limit(1);
+  if (!existing) {
+    throw new Error('Cartão não encontrado');
+  }
+
+  const [institution] = await ctx.db
+    .select({ id: institutions.id })
+    .from(institutions)
+    .where(
+      and(
+        eq(institutions.id, input.institutionId),
+        eq(institutions.householdId, session.householdId),
+      ),
+    )
+    .limit(1);
+  if (!institution) {
+    throw new Error('Banco inválido');
+  }
+
+  const [paymentAccount] = await ctx.db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(eq(accounts.id, input.paymentAccountId), eq(accounts.householdId, session.householdId)),
+    )
+    .limit(1);
+  if (!paymentAccount) {
+    throw new Error('Conta de pagamento inválida');
+  }
+
+  const [row] = await ctx.db
+    .update(creditCards)
+    .set({
+      institutionId: input.institutionId,
+      paymentAccountId: input.paymentAccountId,
+      name: input.name,
+      cardMode: input.cardMode,
+      lastFour: input.lastFour ?? null,
+      creditLimitCents: input.cardMode === 'debit' ? 0 : input.creditLimitCents,
+      invoiceBalanceCents: input.cardMode === 'debit' ? 0 : input.invoiceBalanceCents,
+      closingDay: input.cardMode === 'debit' ? 1 : input.closingDay,
+      dueDay: input.cardMode === 'debit' ? 1 : input.dueDay,
+      updatedAt: new Date(),
+    })
+    .where(eq(creditCards.id, existing.id))
+    .returning();
+
+  await writeAudit(ctx, {
+    action: 'update',
+    resourceType: 'credit_card',
+    resourceId: existing.id,
+    metadata: { name: input.name },
+  });
+
+  return row;
+}
+
+export async function payCreditCardInvoice(ctx: AppContext, raw: PayCreditCardInvoiceInput) {
+  const session = requireSession(ctx.session);
+  requireCapability(session, 'transactions.write');
+  const input = payCreditCardInvoiceSchema.parse({
+    ...raw,
+    householdId: session.householdId,
+  });
+
+  const result = await ctx.db.transaction(async (dbTx) => {
+    const [card] = await dbTx
+      .select()
+      .from(creditCards)
+      .where(
+        and(
+          eq(creditCards.id, input.creditCardId),
+          eq(creditCards.householdId, session.householdId),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!card) {
+      throw new Error('Cartão não encontrado');
+    }
+
+    const paymentAccountId = input.paymentAccountId ?? card.paymentAccountId;
+    const [account] = await dbTx
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, paymentAccountId), eq(accounts.householdId, session.householdId)))
+      .limit(1)
+      .for('update');
+    if (!account) {
+      throw new Error('Conta de pagamento não encontrada');
+    }
+
+    const [invoice] = await dbTx
+      .select()
+      .from(creditCardInvoices)
+      .where(
+        and(
+          eq(creditCardInvoices.creditCardId, card.id),
+          eq(creditCardInvoices.householdId, session.householdId),
+          inArray(creditCardInvoices.status, ['open', 'closed']),
+        ),
+      )
+      .orderBy(asc(creditCardInvoices.dueOn))
+      .limit(1);
+
+    const purchases = invoice
+      ? await sumInvoiceBalanceCents(dbTx, {
+          householdId: session.householdId,
+          invoiceId: invoice.id,
+        })
+      : card.invoiceBalanceCents;
+    const invoiceBalance = invoice
+      ? Math.max(0, purchases - invoice.amountPaidCents)
+      : card.invoiceBalanceCents;
+
+    assertPayInvoice({
+      amountCents: input.amountCents,
+      accountBalanceCents: account.balanceCents,
+      invoiceBalanceCents: invoiceBalance,
+      accountArchived: account.isArchived,
+      cardArchived: card.isArchived,
+    });
+
+    const [expenseCat] = await dbTx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.householdId, session.householdId), eq(categories.type, 'expense')))
+      .limit(1);
+    if (!expenseCat) {
+      throw new Error('Cadastre uma categoria de despesa para registrar o pagamento da fatura');
+    }
+
+    await dbTx
+      .update(accounts)
+      .set({
+        balanceCents: account.balanceCents - input.amountCents,
+        updatedAt: new Date(),
+      })
+      .where(eq(accounts.id, account.id));
+
+    const [settlement] = await dbTx
+      .insert(transactions)
+      .values({
+        householdId: session.householdId,
+        costCenterId: account.costCenterId,
+        categoryId: expenseCat.id,
+        accountId: account.id,
+        creditCardId: null,
+        creditCardInvoiceId: null,
+        paymentRail: input.paymentRail ?? 'pix',
+        type: 'expense',
+        status: 'paid',
+        amountCents: input.amountCents,
+        occurredOn: input.paidOn,
+        dueOn: invoice?.dueOn ?? input.paidOn,
+        paidOn: input.paidOn,
+        description: `Pagamento fatura ${card.name}`,
+        tags: [],
+        source: 'manual',
+        createdBy: session.userId,
+      })
+      .returning();
+
+    if (invoice) {
+      const nextPaid = invoice.amountPaidCents + input.amountCents;
+      const remaining = invoiceBalance - input.amountCents;
+      await dbTx
+        .update(creditCardInvoices)
+        .set({
+          amountPaidCents: nextPaid,
+          status: remaining <= 0 ? 'paid' : invoice.status,
+          updatedAt: new Date(),
+        })
+        .where(eq(creditCardInvoices.id, invoice.id));
+    }
+
+    await refreshCardInvoiceBalanceCache(dbTx, {
+      householdId: session.householdId,
+      creditCardId: card.id,
+    });
+
+    return {
+      cardId: card.id,
+      paymentAccountId,
+      amountCents: input.amountCents,
+      settlementId: settlement?.id,
+      invoiceId: invoice?.id ?? null,
+    };
+  });
+
+  await writeAudit(ctx, {
+    action: 'pay_invoice',
+    resourceType: 'credit_card',
+    resourceId: result.cardId,
+    metadata: {
+      amountCents: result.amountCents,
+      paidOn: input.paidOn,
+      paymentAccountId: result.paymentAccountId,
+      settlementId: result.settlementId,
+      invoiceId: result.invoiceId,
+    },
+  });
+
+  return result;
 }
 
 export async function createTransfer(ctx: AppContext, raw: CreateTransferInput) {
@@ -1526,7 +2313,7 @@ export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
 
   if (input.financingId) {
     const [financing] = await ctx.db
-      .select({ id: financings.id })
+      .select({ id: financings.id, category: financings.category })
       .from(financings)
       .where(
         and(
@@ -1537,6 +2324,9 @@ export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
       );
     if (!financing) {
       throw new Error('Financiamento não encontrado');
+    }
+    if (input.kind === 'real_estate_amortization' && financing.category !== 'real_estate') {
+      throw new Error('Plano de amortização exige financiamento imobiliário');
     }
   }
 
@@ -1825,3 +2615,39 @@ export {
   type HouseholdMemberRow,
   type PeekInviteResult,
 } from './members';
+
+export * from './queries';
+
+export {
+  createCostCenter,
+  createCategory,
+  createInstitution,
+  setupBank,
+  updateInstitution,
+  createAccount,
+  updateAccount,
+  updateAccountBalance,
+} from './commands/settings';
+
+export {
+  updatePreferences,
+  updateThemePreference,
+  confirmIncomeReceipt,
+  snoozeIncomeReceipt,
+} from './commands/preferences';
+
+export { createHousehold } from './commands/household';
+
+export {
+  commitImport,
+  downloadImportTemplate,
+  exportTransactions,
+  previewImport,
+  updateImportPreview,
+  type ImportPaymentMethodMapping,
+  type ImportPreviewEntityOption,
+  type ImportPreviewResult,
+  type ImportPreviewRowDto,
+} from './imex/use-cases';
+
+export { sendJarvisMessage, type JarvisMessageResult } from './jarvis/chat';

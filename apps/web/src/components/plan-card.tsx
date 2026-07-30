@@ -13,8 +13,8 @@ import { PlanPayoffSimulator } from '@/components/plan-payoff-simulator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { runWithToast } from '@/lib/action-toast';
-import { deletePlanAction } from '@/server/actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { deletePlanAction } from '@/lib/api/mutations';
 import type { AmortizationSystem } from '@tim/domain';
 import {
   analyzeContributionSchedule,
@@ -23,6 +23,7 @@ import {
   formatBrlFromCents,
   formatIsoDateBr,
   PLAN_KIND_LABEL,
+  sumPlanItems,
   type PlanKind,
 } from '@tim/domain';
 
@@ -45,6 +46,13 @@ export interface PlanCardData {
     installmentAmountCents: number;
     amortizationCents: number;
     firstDueOn: string;
+    pendingInstallments: Array<{
+      number: number;
+      dueOn: string;
+      principalCents: number;
+      amountCents: number;
+      interestCents: number;
+    }>;
   };
   canWrite: boolean;
 }
@@ -52,11 +60,14 @@ export interface PlanCardData {
 export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
   const [expanded, setExpanded] = useState(true);
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
   const [contributions, setContributions] = useState(plan.contributions);
+  const [items, setItems] = useState(plan.items);
 
-  const progress = computePlanProgress(plan.savedCents, plan.targetCents);
+  const liveTargetCents = sumPlanItems(items);
+  const progress = computePlanProgress(plan.savedCents, liveTargetCents);
   const scheduleAnalysis = analyzeContributionSchedule({
-    targetCents: plan.targetCents,
+    targetCents: liveTargetCents,
     savedCents: plan.savedCents,
     contributions,
   });
@@ -64,7 +75,7 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
     plan.monthlyTargetCents != null && plan.monthlyTargetCents > 0
       ? plan.monthlyTargetCents
       : computeMonthlySavingsNeeded({
-          targetCents: plan.targetCents,
+          targetCents: liveTargetCents,
           savedCents: plan.savedCents,
           targetDate: plan.targetDate,
         });
@@ -83,9 +94,10 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
   function handleDelete(): void {
     if (!window.confirm(`Excluir o plano "${plan.name}"?`)) return;
     startTransition(async () => {
-      await runWithToast(() => deletePlanAction(plan.id), {
+      await run(() => deletePlanAction(plan.id), {
         loading: 'Excluindo…',
         success: 'Plano excluído',
+        invalidate: 'financing',
       });
     });
   }
@@ -103,7 +115,7 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span>
-                  {formatBrlFromCents(plan.savedCents)} de {formatBrlFromCents(plan.targetCents)}
+                  {formatBrlFromCents(plan.savedCents)} de {formatBrlFromCents(liveTargetCents)}
                 </span>
                 <span className="tabular-nums">{progress.progressPercent}%</span>
               </div>
@@ -176,29 +188,41 @@ export function PlanCard({ plan }: { plan: PlanCardData }): React.ReactElement {
               installmentAmountCents={plan.financingPayoff.installmentAmountCents}
               amortizationCents={plan.financingPayoff.amortizationCents}
               firstDueOn={plan.financingPayoff.firstDueOn}
+              pendingInstallments={plan.financingPayoff.pendingInstallments}
               targetDate={plan.targetDate}
+              variant={plan.kind === 'real_estate_amortization' ? 'amortization' : 'payoff'}
             />
           ) : null}
-          {plan.kind !== 'financing_payoff' && plan.targetCents > 0 ? (
+          <PlanItemsTable
+            planId={plan.id}
+            items={items}
+            onChange={plan.canWrite ? setItems : undefined}
+            readOnly={!plan.canWrite}
+          />
+          {plan.kind !== 'financing_payoff' &&
+          plan.kind !== 'real_estate_amortization' &&
+          liveTargetCents > 0 ? (
             <PlanGoalSimulator
-              targetCents={plan.targetCents}
+              targetCents={liveTargetCents}
               savedCents={plan.savedCents}
               targetDate={plan.targetDate}
               defaultMonthlyCents={plan.monthlyTargetCents}
+              items={items}
             />
           ) : null}
-          {contributions.length > 0 ? (
+          {plan.kind !== 'financing_payoff' && plan.kind !== 'real_estate_amortization' ? (
             <PlanContributionSchedule
-              targetCents={plan.targetCents}
+              targetCents={liveTargetCents}
               savedCents={plan.savedCents}
               monthlyTargetCents={plan.monthlyTargetCents}
               contributions={contributions}
               onChange={plan.canWrite ? setContributions : undefined}
               readOnly={!plan.canWrite}
               planId={plan.canWrite ? plan.id : undefined}
+              targetDate={plan.targetDate}
+              items={items}
             />
           ) : null}
-          <PlanItemsTable planId={plan.id} items={plan.items} readOnly={!plan.canWrite} />
         </div>
       ) : null}
     </article>

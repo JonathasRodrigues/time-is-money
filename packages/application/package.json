@@ -12,10 +12,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@tim/api-contract": "workspace:*",
     "@tim/auth": "workspace:*",
     "@tim/crypto": "workspace:*",
     "@tim/db": "workspace:*",
     "@tim/domain": "workspace:*",
+    "@tim/imex": "workspace:*",
+    "@tim/jarvis": "workspace:*",
     "@tim/permissions": "workspace:*",
     "@tim/validators": "workspace:*",
     "drizzle-orm": "^0.40.0"

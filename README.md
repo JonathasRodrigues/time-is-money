@@ -77,7 +77,17 @@ Abra `http://localhost:3000/dashboard` — badge **Demo local**.
 
 Para testar Clerk de verdade: `pnpm dev:clerk` (exige chaves válidas e `DEMO_MODE=0`).
 
-O package `@tim/mocks` cria household, PF + Empresa X, contas, lançamentos e financiamento de exemplo.
+## UI mock offline (sem API nem banco)
+
+Com `MOCK_API=1` a web responde com fixtures in-memory em `@tim/mocks/api` — ideal para Storybook, protótipos e testes de UI.
+
+```bash
+pnpm dev:mock    # só @tim/web — sem @tim/api, Neon ou Clerk
+```
+
+Abra `http://localhost:3000/dashboard`. Mutações simples (ex.: criar lançamento) atualizam o store em memória na sessão.
+
+O package `@tim/mocks` também faz seed no Postgres para `dev:demo` (household, PF + Empresa X, contas, lançamentos e financiamento de exemplo).
 
 ```bash
 pnpm dev          # desenvolvimento (respeita DEMO_MODE do .env)
@@ -88,14 +98,14 @@ pnpm test         # testes unitários
 pnpm db:studio    # explorar banco
 ```
 
-## Deploy (Vercel)
+## Deploy (produção)
 
-1. Importe o repositório na Vercel.
-2. **Root Directory:** `apps/web` (se deixar a raiz, o site sobe com 404).
-3. **Framework:** Next.js.
-4. Configure todas as env vars do `.env.example`.
-5. Cron de lembretes já está em `apps/web/vercel.json` (ver `docs/ops/vercel.md`).
-6. Após o deploy: `DATABASE_URL=<prod> pnpm db:migrate`.
+Checklist: [`docs/ops/deploy.md`](docs/ops/deploy.md).
+
+1. **Neon** — `DATABASE_URL=<prod> pnpm db:migrate` (ou `packages/db/drizzle/bootstrap-neon.sql` num banco vazio).
+2. **Vercel** — Root Directory `apps/web`, env vars do `.env.example` **sem** `API_URL` (Hono embutido em `/api/v1`).
+3. Clerk: domínio Vercel nas allowed origins.
+4. Cron: `apps/web/vercel.json` (ver `docs/ops/vercel.md`).
 
 ## Estrutura
 

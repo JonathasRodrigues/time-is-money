@@ -11,7 +11,7 @@ import {
   updateImportPreviewAction,
   type ImportPreviewResult,
   type ImportPreviewRowDto,
-} from '@/server/imex-actions';
+} from '@/lib/api/mutations';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { runWithToast } from '@/lib/action-toast';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
 
 function BusyButtonLabel({
   active,
@@ -70,6 +70,7 @@ function shiftYearOnRows(rows: ImportPreviewRowDto[], year: number): ImportPrevi
 
 export function ImportExportClient(): React.ReactElement {
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
   const [busy, setBusy] = useState<'export' | 'template' | 'preview' | 'save' | 'commit' | null>(
     null,
   );
@@ -167,17 +168,17 @@ export function ImportExportClient(): React.ReactElement {
   }
 
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Download className="size-4 text-primary" />
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="gap-4 py-5">
+          <CardHeader className="px-5 pb-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Download className="size-4 text-primary" aria-hidden />
               Exportar
             </CardTitle>
             <CardDescription>Baixe lançamentos em CSV ou XLSX</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-5">
             <form
               className="grid gap-3"
               onSubmit={(e) => {
@@ -186,7 +187,7 @@ export function ImportExportClient(): React.ReactElement {
                 setBusy('export');
                 startTransition(async () => {
                   try {
-                    await runWithToast(
+                    await run(
                       async () => {
                         const result = await exportTransactionsAction({
                           format: String(fd.get('format') || 'csv') as 'csv' | 'xlsx',
@@ -253,7 +254,7 @@ export function ImportExportClient(): React.ReactElement {
                 setBusy('template');
                 startTransition(async () => {
                   try {
-                    await runWithToast(
+                    await run(
                       async () => {
                         const result = await downloadTemplateAction();
                         const blob = new Blob([result.csv], {
@@ -285,17 +286,17 @@ export function ImportExportClient(): React.ReactElement {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="size-4 text-primary" />
+        <Card className="gap-4 py-5">
+          <CardHeader className="px-5 pb-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Upload className="size-4 text-primary" aria-hidden />
               Importar
             </CardTitle>
             <CardDescription>
               Template flat ou planilha Contas (abas mensais). Revise antes de gravar.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-5">
             <form
               className="grid gap-3"
               onSubmit={(e) => {
@@ -304,7 +305,7 @@ export function ImportExportClient(): React.ReactElement {
                 setBusy('preview');
                 startTransition(async () => {
                   try {
-                    await runWithToast(
+                    await run(
                       async () => {
                         const result = await previewImportAction(fd);
                         initPreview(result);
@@ -341,9 +342,9 @@ export function ImportExportClient(): React.ReactElement {
       </div>
 
       {preview ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Revisão da importação</CardTitle>
+        <Card className="gap-4 py-5">
+          <CardHeader className="px-5 pb-0">
+            <CardTitle className="text-base">Revisão da importação</CardTitle>
             <CardDescription>
               {preview.fileName}
               {preview.importFormat === 'contas-monthly'
@@ -351,7 +352,7 @@ export function ImportExportClient(): React.ReactElement {
                 : ' — template flat. Ajuste linhas antes de confirmar.'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-5">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{counts.ok} ok</Badge>
@@ -618,13 +619,17 @@ export function ImportExportClient(): React.ReactElement {
                     setBusy('save');
                     startTransition(async () => {
                       try {
-                        await runWithToast(
+                        await run(
                           () =>
                             updateImportPreviewAction({
                               jobId: preview.jobId,
                               rows: rowsToUpdatePayload(),
                             }),
-                          { loading: 'Salvando ajustes…', success: 'Ajustes salvos' },
+                          {
+                            loading: 'Salvando ajustes…',
+                            success: 'Ajustes salvos',
+                            invalidate: 'money',
+                          },
                         );
                         setDirty(false);
                         setMessage('Ajustes salvos no preview');
@@ -658,7 +663,7 @@ export function ImportExportClient(): React.ReactElement {
                     setBusy('commit');
                     startTransition(async () => {
                       try {
-                        await runWithToast(
+                        await run(
                           async () => {
                             if (dirty) {
                               await updateImportPreviewAction({
@@ -678,6 +683,7 @@ export function ImportExportClient(): React.ReactElement {
                           {
                             loading: 'Confirmando importação…',
                             success: 'Importação concluída',
+                            invalidate: 'money',
                           },
                         );
                       } catch {

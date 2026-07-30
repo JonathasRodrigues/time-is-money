@@ -3,8 +3,8 @@
 import { useTransition } from 'react';
 import type { Role } from '@tim/permissions';
 import { MEMBER_ROLE_LABEL } from '@tim/domain';
-import { createHouseholdAction } from '@/server/actions';
-import { acceptInviteByIdAction } from '@/server/members-actions';
+import { createHouseholdAction } from '@/lib/api/mutations';
+import { acceptInviteByIdAction } from '@/lib/api/mutations';
 import { AuthCardHeader, AuthFooterNote, AuthShell } from '@/components/auth-shell';
 import { ActionForm } from '@/components/action-form';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { withActionToast } from '@/lib/action-toast';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
 import { useRouter } from 'next/navigation';
 
 export interface PendingInviteSummary {
@@ -28,20 +28,7 @@ export function OnboardingForm({
 }): React.ReactElement {
   const router = useRouter();
   const [, startTransition] = useTransition();
-
-  const action = withActionToast(
-    async (formData: FormData) => {
-      await createHouseholdAction(String(formData.get('name') || 'Minha casa'));
-      startTransition(() => {
-        router.push('/dashboard');
-        router.refresh();
-      });
-    },
-    {
-      loading: 'Criando household…',
-      success: 'Household criado',
-    },
-  );
+  const { run } = useMutationFeedback();
 
   return (
     <AuthShell eyebrow="Começar">
@@ -68,6 +55,7 @@ export function OnboardingForm({
                 action={acceptInviteByIdAction}
                 successMessage="Convite aceito"
                 loadingMessage="Aceitando…"
+                invalidate="session"
               >
                 <input type="hidden" name="invitationId" value={invite.id} />
                 <Button type="submit" size="sm">
@@ -81,7 +69,25 @@ export function OnboardingForm({
         </div>
       ) : null}
 
-      <form action={action} className="space-y-4">
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          startTransition(async () => {
+            try {
+              await run(() => createHouseholdAction(String(formData.get('name') || 'Minha casa')), {
+                loading: 'Criando household…',
+                success: 'Household criado',
+                invalidate: 'session',
+              });
+              router.push('/dashboard');
+            } catch {
+              // toast já exibido
+            }
+          });
+        }}
+      >
         <div className="grid gap-2">
           <Label htmlFor="name">Nome do household</Label>
           <Input id="name" name="name" defaultValue="Casa" required className="bg-card" />

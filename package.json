@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@tim/web",
+    "dev": "turbo run dev --filter=@tim/web --filter=@tim/api",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
@@ -16,10 +16,12 @@
     "db:migrate": "pnpm --filter @tim/db migrate",
     "db:studio": "pnpm --filter @tim/db studio",
     "demo:seed": "pnpm --filter @tim/mocks seed",
-    "dev:demo": "pnpm demo:seed && DEMO_MODE=1 pnpm --filter @tim/web dev",
-    "dev:clerk": "DEMO_MODE=0 pnpm --filter @tim/web dev",
+    "dev:demo": "pnpm demo:seed && DEMO_MODE=1 turbo run dev --filter=@tim/web --filter=@tim/api",
+    "dev:mock": "MOCK_API=1 NEXT_PUBLIC_MOCK_API=1 turbo run dev --filter=@tim/web",
+    "dev:clerk": "DEMO_MODE=0 turbo run dev --filter=@tim/web --filter=@tim/api",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "api:contract:check": "pnpm --filter @tim/api-contract test"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",

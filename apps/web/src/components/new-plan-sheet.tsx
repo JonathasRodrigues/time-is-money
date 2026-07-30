@@ -29,11 +29,15 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { runWithToast } from '@/lib/action-toast';
-import { createPlanAction } from '@/server/actions';
-import type { AmortizationSystem, PlanContributionRow } from '@tim/domain';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { createPlanAction } from '@/lib/api/mutations';
+import type { AmortizationSystem, FinancingCategory, PlanContributionRow } from '@tim/domain';
 
 type CreationMode = 'detailed' | 'generator';
+
+function isFinancingLinkedKind(kind: PlanKind): boolean {
+  return kind === 'financing_payoff' || kind === 'real_estate_amortization';
+}
 
 interface Option {
   id: string;
@@ -43,12 +47,20 @@ interface Option {
 interface FinancingOption {
   id: string;
   name: string;
+  category: FinancingCategory;
   balanceCents: number;
   system: AmortizationSystem;
   annualRateBps: number | null;
   installmentAmountCents: number;
   amortizationCents: number;
   firstDueOn: string;
+  pendingInstallments: Array<{
+    number: number;
+    dueOn: string;
+    principalCents: number;
+    amountCents: number;
+    interestCents: number;
+  }>;
 }
 
 interface DraftItem {
@@ -62,6 +74,7 @@ export function NewPlanSheet({
   financings,
   defaultCostCenterId,
   presetFinancingId,
+  presetKind,
   trigger,
 }: {
   centers: Option[];
@@ -69,12 +82,17 @@ export function NewPlanSheet({
   financings: FinancingOption[];
   defaultCostCenterId?: string;
   presetFinancingId?: string;
+  presetKind?: PlanKind;
   trigger?: React.ReactNode;
 }): React.ReactElement {
+  const initialKind: PlanKind = presetKind ?? (presetFinancingId ? 'financing_payoff' : 'travel');
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [creationMode, setCreationMode] = useState<CreationMode>('generator');
-  const [kind, setKind] = useState<PlanKind>(presetFinancingId ? 'financing_payoff' : 'travel');
+  const { run } = useMutationFeedback();
+  const [creationMode, setCreationMode] = useState<CreationMode>(
+    isFinancingLinkedKind(initialKind) ? 'detailed' : 'generator',
+  );
+  const [kind, setKind] = useState<PlanKind>(initialKind);
   const [name, setName] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [financingId, setFinancingId] = useState(presetFinancingId ?? '');
@@ -95,7 +113,14 @@ export function NewPlanSheet({
   const [genGoalAmount, setGenGoalAmount] = useState('10000');
   const [contributions, setContributions] = useState<PlanContributionRow[]>([]);
 
-  const selectedFinancing = financings.find((f) => f.id === financingId) ?? null;
+  const financingChoices = useMemo(() => {
+    if (kind === 'real_estate_amortization') {
+      return financings.filter((financing) => financing.category === 'real_estate');
+    }
+    return financings;
+  }, [financings, kind]);
+
+  const selectedFinancing = financingChoices.find((f) => f.id === financingId) ?? null;
   const monthlyTargetCents = parseBrlToCents(genMonthlyAmount);
 
   const parsedItems = useMemo(() => {
@@ -113,12 +138,12 @@ export function NewPlanSheet({
   }, [items]);
 
   const targetCents =
-    creationMode === 'generator' && kind !== 'financing_payoff'
+    creationMode === 'generator' && !isFinancingLinkedKind(kind)
       ? (parseBrlToCents(genGoalAmount) ?? 0)
       : sumPlanItems(parsedItems);
 
   const submitItems = useMemo(() => {
-    if (creationMode === 'generator' && kind !== 'financing_payoff') {
+    if (creationMode === 'generator' && !isFinancingLinkedKind(kind)) {
       const cents = parseBrlToCents(genGoalAmount);
       if (cents == null || cents <= 0 || !name.trim()) return [];
       return [{ label: name.trim(), amountCents: cents, sortOrder: 0 }];
@@ -128,11 +153,29 @@ export function NewPlanSheet({
 
   function resetForKind(nextKind: PlanKind): void {
     setKind(nextKind);
+    setCreationMode(isFinancingLinkedKind(nextKind) ? 'detailed' : 'generator');
     if (nextKind === 'financing_payoff') {
       const financing = financings[0];
       setFinancingId(presetFinancingId ?? financing?.id ?? '');
       setName(financing ? `Quitar ${financing.name}` : 'Quitação de financiamento');
-      setItems([{ label: 'Reserva para quitação', amount: '0' }]);
+      setItems([
+        {
+          label: 'Reserva para quitação',
+          amount: financing ? String(Math.round(financing.balanceCents / 100)) : '1000',
+        },
+      ]);
+    } else if (nextKind === 'real_estate_amortization') {
+      const realEstate = financings.filter((financing) => financing.category === 'real_estate');
+      const financing =
+        realEstate.find((item) => item.id === presetFinancingId) ?? realEstate[0] ?? null;
+      setFinancingId(financing?.id ?? '');
+      setName(financing ? `Amortizar ${financing.name}` : 'Amortização imobiliária');
+      setItems([
+        {
+          label: 'Reserva para amortização',
+          amount: financing ? String(Math.round(financing.balanceCents / 100)) : '1000',
+        },
+      ]);
     } else if (nextKind === 'travel') {
       setFinancingId('');
       setName('Viagem');
@@ -152,16 +195,17 @@ export function NewPlanSheet({
   function handleSubmit(event: React.FormEvent): void {
     event.preventDefault();
     if (submitItems.length === 0 || !name.trim() || !targetDate) return;
+    if (isFinancingLinkedKind(kind) && !financingId) return;
 
     startTransition(async () => {
       try {
-        await runWithToast(
+        await run(
           () =>
             createPlanAction({
               kind,
               name: name.trim(),
               targetDate,
-              financingId: kind === 'financing_payoff' ? financingId : null,
+              financingId: isFinancingLinkedKind(kind) ? financingId : null,
               linkedAccountId: createLinkedAccount ? null : linkedAccountId || null,
               monthlyTargetCents:
                 creationMode === 'generator' && monthlyTargetCents != null
@@ -182,7 +226,7 @@ export function NewPlanSheet({
                     }))
                   : undefined,
             }),
-          { loading: 'Criando plano…', success: 'Plano criado' },
+          { loading: 'Criando plano…', success: 'Plano criado', invalidate: 'financing' },
         );
         setOpen(false);
       } catch {
@@ -197,7 +241,7 @@ export function NewPlanSheet({
       onOpenChange={(next) => {
         setOpen(next);
         if (next && presetFinancingId) {
-          resetForKind('financing_payoff');
+          resetForKind(presetKind ?? 'financing_payoff');
           setFinancingId(presetFinancingId);
         }
       }}
@@ -218,7 +262,7 @@ export function NewPlanSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <form className="grid gap-5 px-4 pb-6" onSubmit={handleSubmit}>
+        <form className="grid gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="planKind">Tipo</Label>
             <select
@@ -235,7 +279,7 @@ export function NewPlanSheet({
             </select>
           </div>
 
-          {kind !== 'financing_payoff' ? (
+          {kind !== 'financing_payoff' && kind !== 'real_estate_amortization' ? (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="creationMode">Como montar o plano</Label>
               <select
@@ -250,7 +294,7 @@ export function NewPlanSheet({
             </div>
           ) : null}
 
-          {creationMode === 'generator' && kind !== 'financing_payoff' ? (
+          {creationMode === 'generator' && !isFinancingLinkedKind(kind) ? (
             <PlanScheduleGenerator
               goalName={name}
               goalAmount={genGoalAmount}
@@ -287,9 +331,13 @@ export function NewPlanSheet({
                 />
               </div>
 
-              {kind === 'financing_payoff' ? (
+              {kind === 'financing_payoff' || kind === 'real_estate_amortization' ? (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="planFinancingId">Financiamento</Label>
+                  <Label htmlFor="planFinancingId">
+                    {kind === 'real_estate_amortization'
+                      ? 'Financiamento imobiliário'
+                      : 'Financiamento'}
+                  </Label>
                   <select
                     id="planFinancingId"
                     className={nativeSelectClassName}
@@ -297,12 +345,13 @@ export function NewPlanSheet({
                     onChange={(event) => {
                       const id = event.target.value;
                       setFinancingId(id);
-                      const financing = financings.find((f) => f.id === id);
+                      const financing = financingChoices.find((f) => f.id === id);
                       if (financing) {
-                        setName(`Quitar ${financing.name}`);
+                        const isAmort = kind === 'real_estate_amortization';
+                        setName(`${isAmort ? 'Amortizar' : 'Quitar'} ${financing.name}`);
                         setItems([
                           {
-                            label: 'Reserva para quitação',
+                            label: isAmort ? 'Reserva para amortização' : 'Reserva para quitação',
                             amount: String(Math.round(financing.balanceCents / 100)),
                           },
                         ]);
@@ -311,18 +360,29 @@ export function NewPlanSheet({
                     required
                   >
                     <option value="">Selecione…</option>
-                    {financings.map((financing) => (
+                    {financingChoices.map((financing) => (
                       <option key={financing.id} value={financing.id}>
                         {financing.name} · {formatBrlFromCents(financing.balanceCents)} restante
                       </option>
                     ))}
                   </select>
+                  {kind === 'real_estate_amortization' && financingChoices.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Nenhum financiamento imobiliário com saldo disponível. Cadastre um em
+                      Financiamentos (categoria Imóvel).
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label>Itens do plano</Label>
+                  <div>
+                    <Label>Itens do plano</Label>
+                    <p className="text-xs text-muted-foreground">
+                      A soma vira a meta do simulador de reserva.
+                    </p>
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {kind === 'travel' ? (
                       <Button
@@ -396,7 +456,7 @@ export function NewPlanSheet({
             </p>
           ) : null}
 
-          {kind === 'financing_payoff' && selectedFinancing && targetDate ? (
+          {isFinancingLinkedKind(kind) && selectedFinancing && targetDate ? (
             <PlanPayoffSimulator
               balanceCents={selectedFinancing.balanceCents}
               system={selectedFinancing.system}
@@ -404,12 +464,18 @@ export function NewPlanSheet({
               installmentAmountCents={selectedFinancing.installmentAmountCents}
               amortizationCents={selectedFinancing.amortizationCents}
               firstDueOn={selectedFinancing.firstDueOn}
+              pendingInstallments={selectedFinancing.pendingInstallments}
               targetDate={targetDate}
+              variant={kind === 'real_estate_amortization' ? 'amortization' : 'payoff'}
               onSuggestedReserveCents={(cents) => {
+                const label =
+                  kind === 'real_estate_amortization'
+                    ? 'Reserva para amortização'
+                    : 'Reserva para quitação';
                 setItems([
                   {
-                    label: 'Reserva para quitação',
-                    amount: String(Math.round(cents / 100)),
+                    label,
+                    amount: String(Math.max(1, Math.round(cents / 100))),
                   },
                 ]);
                 setGenMonthlyAmount((Math.round(cents / 12) / 100).toFixed(2).replace('.', ','));
@@ -417,12 +483,20 @@ export function NewPlanSheet({
             />
           ) : null}
 
-          {kind !== 'financing_payoff' && targetCents > 0 && targetDate ? (
+          {!isFinancingLinkedKind(kind) && targetCents > 0 && targetDate ? (
             <PlanGoalSimulator
               targetCents={targetCents}
               savedCents={0}
               targetDate={targetDate}
               defaultMonthlyCents={monthlyTargetCents}
+              items={
+                creationMode === 'generator'
+                  ? [{ label: name.trim() || 'Meta', amountCents: targetCents }]
+                  : parsedItems.map((item) => ({
+                      label: item.label,
+                      amountCents: item.amountCents,
+                    }))
+              }
             />
           ) : null}
 
@@ -443,7 +517,10 @@ export function NewPlanSheet({
             isPending={pending}
             disabled={
               submitItems.length === 0 ||
-              (creationMode === 'generator' && contributions.length === 0)
+              (isFinancingLinkedKind(kind) && !financingId) ||
+              (creationMode === 'generator' &&
+                !isFinancingLinkedKind(kind) &&
+                contributions.length === 0)
             }
           >
             Criar plano

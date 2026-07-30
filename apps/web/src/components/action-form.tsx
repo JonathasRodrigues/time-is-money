@@ -1,54 +1,69 @@
 'use client';
 
-import { useFormStatus } from 'react-dom';
-import { withActionToast } from '@/lib/action-toast';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState, type FormEvent } from 'react';
+import { ActionFormPendingProvider } from '@/components/action-form-context';
+import { runMutationWithFeedback, type MutationToastOptions } from '@/lib/api/mutation-feedback';
 import { cn } from '@/lib/utils';
 
-type ServerFormAction = (formData: FormData) => Promise<unknown>;
+type FormMutation = (formData: FormData) => Promise<unknown>;
+
+export type ActionFormProps = {
+  action: FormMutation;
+  successMessage: string;
+  loadingMessage?: string;
+  invalidate?: MutationToastOptions['invalidate'] | false;
+  className?: string;
+  children: React.ReactNode;
+  onSuccess?: () => void;
+};
 
 /**
- * Form padrão TIM: toast + botão com spinner.
- * Sem fade pesado no formulário inteiro (parecia “travado”).
+ * Client form wrapper: toast, cache invalidation, disabled state (REST via @/lib/api/mutations).
  */
 export function ActionForm({
   action,
   successMessage,
   loadingMessage = 'Salvando…',
+  invalidate = 'money',
   className,
   children,
-}: {
-  action: ServerFormAction;
-  successMessage: string;
-  loadingMessage?: string;
-  className?: string;
-  children: React.ReactNode;
-}): React.ReactElement {
-  const bound = withActionToast(action, {
-    loading: loadingMessage,
-    success: successMessage,
-  });
+  onSuccess,
+}: ActionFormProps): React.ReactElement {
+  const queryClient = useQueryClient();
+  const [pending, setPending] = useState(false);
 
-  return (
-    <form action={bound}>
-      <FormBusyBody className={className}>{children}</FormBusyBody>
-    </form>
+  const onSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      setPending(true);
+      void runMutationWithFeedback(queryClient, () => action(formData), {
+        loading: loadingMessage,
+        success: successMessage,
+        ...(invalidate ? { invalidate } : {}),
+      })
+        .then(() => {
+          onSuccess?.();
+        })
+        .catch(() => {
+          // toast handled in runMutationWithFeedback
+        })
+        .finally(() => {
+          setPending(false);
+        });
+    },
+    [action, invalidate, loadingMessage, onSuccess, queryClient, successMessage],
   );
-}
-
-function FormBusyBody({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}): React.ReactElement {
-  const { pending } = useFormStatus();
 
   return (
-    <div className={cn(className)} aria-busy={pending || undefined}>
-      <fieldset disabled={pending} className="contents">
-        {children}
-      </fieldset>
-    </div>
+    <form onSubmit={onSubmit} className={cn(className)} aria-busy={pending || undefined}>
+      <ActionFormPendingProvider pending={pending}>
+        <fieldset disabled={pending} className="contents">
+          {children}
+        </fieldset>
+      </ActionFormPendingProvider>
+    </form>
   );
 }

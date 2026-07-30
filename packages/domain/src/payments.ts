@@ -1,10 +1,10 @@
-export type PayableKind = 'fixed' | 'variable' | 'installment';
+export type PayableKind = 'fixed' | 'variable' | 'installment' | 'credit_card_invoice';
 
 /** Classifica origem do lançamento a pagar para UI/filtros. */
 export function resolvePayableKind(input: {
   seriesId: string | null | undefined;
   installmentId: string | null | undefined;
-}): PayableKind {
+}): Exclude<PayableKind, 'credit_card_invoice'> {
   if (input.installmentId) return 'installment';
   if (input.seriesId) return 'fixed';
   return 'variable';
@@ -14,6 +14,7 @@ export const PAYABLE_KIND_LABEL: Record<PayableKind, string> = {
   fixed: 'Fixa',
   variable: 'Variável',
   installment: 'Parcela',
+  credit_card_invoice: 'Fatura',
 };
 
 /**

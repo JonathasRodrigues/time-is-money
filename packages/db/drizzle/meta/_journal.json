@@ -71,6 +71,41 @@
       "when": 1753550000000,
       "tag": "0009_theme",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785175637115,
+      "tag": "0010_credit_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785270000000,
+      "tag": "0011_card_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785280000000,
+      "tag": "0012_credit_card_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785290000000,
+      "tag": "0013_series_payment_rail",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0014_real_estate_amortization",
+      "breakpoints": true
     }
   ]
 }

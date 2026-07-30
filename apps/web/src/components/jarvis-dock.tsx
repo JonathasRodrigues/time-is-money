@@ -39,28 +39,37 @@ export function JarvisDock({ ttsEnabled = false }: { ttsEnabled?: boolean }): Re
   }, [open]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50">
-      <button
+    <>
+      <Button
         type="button"
+        variant={open ? 'secondary' : 'ghost'}
+        size="sm"
         aria-label={open ? 'Fechar Jarvis' : 'Abrir Jarvis'}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className={cn(
-          'pointer-events-auto absolute bottom-4 right-4 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition duration-200 hover:scale-[1.03] hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 md:bottom-6 md:right-6',
-          open && 'pointer-events-none invisible scale-90 opacity-0',
-        )}
+        className="shrink-0 gap-1.5"
       >
-        {open ? <X className="size-5" /> : <MessageCircle className="size-5" />}
-      </button>
+        <MessageCircle className="size-4" />
+        <span className="hidden sm:inline">Jarvis</span>
+      </Button>
+
+      {open ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          aria-label="Fechar Jarvis"
+          onClick={() => setOpen(false)}
+        />
+      ) : null}
 
       <div
         className={cn(
-          'pointer-events-auto absolute flex flex-col overflow-hidden border bg-card shadow-xl transition duration-200 ease-out',
+          'fixed z-50 flex flex-col overflow-hidden border bg-card shadow-xl transition duration-200 ease-out',
           'inset-0',
-          'md:inset-auto md:bottom-6 md:right-6 md:h-[min(640px,calc(100svh-3rem))] md:w-[400px] md:rounded-2xl',
+          'md:inset-auto md:top-[calc(3.5rem+0.5rem)] md:right-4 md:h-[min(640px,calc(100svh-4.5rem))] md:w-[400px] md:rounded-2xl lg:right-8',
           open
             ? 'translate-y-0 opacity-100'
-            : 'pointer-events-none translate-y-3 opacity-0 md:translate-y-4',
+            : 'pointer-events-none invisible translate-y-2 opacity-0',
         )}
         aria-hidden={!open}
       >
@@ -86,6 +95,6 @@ export function JarvisDock({ ttsEnabled = false }: { ttsEnabled?: boolean }): Re
 
         {open ? <JarvisChat ttsEnabled={ttsEnabled} autoFocus className="min-h-0 flex-1" /> : null}
       </div>
-    </div>
+    </>
   );
 }

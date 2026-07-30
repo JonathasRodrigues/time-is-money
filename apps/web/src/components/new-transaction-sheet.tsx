@@ -1,6 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import {
+  formatCreditCardPaymentMethodLabel,
+  PAYMENT_RAIL_LABEL,
+  type PaymentRail,
+} from '@tim/domain';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
@@ -19,24 +24,35 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ActionForm } from '@/components/action-form';
-import { createTransactionAction } from '@/server/actions';
+import { createTransactionAction } from '@/lib/api/mutations';
 import { cn } from '@/lib/utils';
+
+const PAYMENT_RAILS: PaymentRail[] = ['pix', 'debit', 'ted', 'boleto', 'cash', 'other'];
 
 export function NewTransactionSheet({
   centers,
   categories,
   accounts,
+  creditCards = [],
   defaultCostCenterId,
   defaultOccurredOn,
 }: {
   centers: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string; type: string }>;
   accounts: Array<{ id: string; name: string }>;
+  creditCards?: Array<{
+    id: string;
+    name: string;
+    paymentAccountId: string;
+    lastFour?: string | null;
+  }>;
   defaultCostCenterId?: string;
   defaultOccurredOn: string;
 }): React.ReactElement {
   const [type, setType] = useState<'expense' | 'income'>('expense');
   const [status, setStatus] = useState<'paid' | 'pending'>('paid');
+  const [funding, setFunding] = useState<'account' | 'card'>('account');
+  const [selectedCardId, setSelectedCardId] = useState(creditCards[0]?.id ?? '');
 
   const filteredCategories = useMemo(
     () => categories.filter((category) => category.type === type),
@@ -45,20 +61,27 @@ export function NewTransactionSheet({
 
   const isExpense = type === 'expense';
   const isPaid = status === 'paid';
+  const canUseCard = isExpense && isPaid && creditCards.length > 0;
+  const useCard = canUseCard && funding === 'card';
+  const selectedCard = creditCards.find((c) => c.id === selectedCardId);
 
   const dateLabel = isPaid
     ? isExpense
-      ? 'Data do pagamento'
+      ? useCard
+        ? 'Data da compra'
+        : 'Data do pagamento'
       : 'Data do recebimento'
     : 'Data de vencimento';
 
   const dateHint = isPaid
     ? isExpense
-      ? 'Quando o dinheiro saiu da conta.'
+      ? useCard
+        ? 'Entra na fatura via esta forma de crédito (conta vinculada não mexe agora).'
+        : 'Quando o dinheiro saiu via a forma (conta vinculada).'
       : 'Quando o dinheiro entrou na conta.'
     : isExpense
-      ? 'Quando a conta vence — entra em Contas → A pagar.'
-      : 'Quando você espera receber — entra em Contas → A receber.';
+      ? 'Quando a conta vence — entra em Contas a pagar.'
+      : 'Quando você espera receber — entra em Contas a receber.';
 
   const statusPaidLabel = isExpense ? 'Já paguei' : 'Já recebi';
   const statusPendingLabel = isExpense ? 'Ainda não paguei' : 'Ainda não recebi';
@@ -75,17 +98,23 @@ export function NewTransactionSheet({
         <SheetHeader>
           <SheetTitle>Registrar movimento</SheetTitle>
           <SheetDescription>
-            Avulso no extrato. Contas fixas e a receber ficam em Contas.
+            Avulso no extrato. Pendências ficam em Contas a pagar / Contas a receber.
           </SheetDescription>
         </SheetHeader>
         <ActionForm
           action={createTransactionAction}
           loadingMessage="Salvando lançamento…"
           successMessage="Lançamento salvo"
-          className="mt-6 grid gap-4 px-4 pb-6"
+          className="grid gap-4"
         >
           <input type="hidden" name="type" value={type} />
           <input type="hidden" name="status" value={status} />
+          {useCard && selectedCard ? (
+            <>
+              <input type="hidden" name="creditCardId" value={selectedCard.id} />
+              <input type="hidden" name="accountId" value={selectedCard.paymentAccountId} />
+            </>
+          ) : null}
 
           <div className="grid gap-2">
             <Label>Tipo</Label>
@@ -96,7 +125,10 @@ export function NewTransactionSheet({
               spacing={0}
               value={type}
               onValueChange={(value) => {
-                if (value === 'expense' || value === 'income') setType(value);
+                if (value === 'expense' || value === 'income') {
+                  setType(value);
+                  if (value === 'income') setFunding('account');
+                }
               }}
               className="w-full bg-muted/50"
             >
@@ -118,7 +150,10 @@ export function NewTransactionSheet({
               spacing={0}
               value={status}
               onValueChange={(value) => {
-                if (value === 'paid' || value === 'pending') setStatus(value);
+                if (value === 'paid' || value === 'pending') {
+                  setStatus(value);
+                  if (value === 'pending') setFunding('account');
+                }
               }}
               className="w-full bg-muted/50"
             >
@@ -132,9 +167,19 @@ export function NewTransactionSheet({
             <p className="text-xs text-muted-foreground">
               {isPaid
                 ? 'Entra no extrato como concluído.'
-                : 'Fica pendente até você confirmar / pagar.'}
+                : isExpense
+                  ? 'Fica em Contas a pagar — só com forma na conta (sem cartão).'
+                  : 'Fica pendente até você confirmar / receber.'}
             </p>
           </div>
+
+          {!isPaid && isExpense && creditCards.length > 0 ? (
+            <p className="rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Pendente não aceita crédito. Para compra no cartão, marque{' '}
+              <span className="font-medium text-foreground">Já paguei</span> e escolha Crédito — a
+              compra entra na fatura.
+            </p>
+          ) : null}
 
           <div className="grid gap-1.5">
             <Label htmlFor="new-amount">Valor (R$)</Label>
@@ -187,22 +232,98 @@ export function NewTransactionSheet({
             </select>
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="new-accountId">Conta</Label>
-            <select
-              id="new-accountId"
-              name="accountId"
-              className={nativeSelectClassName}
-              required
-              defaultValue={accounts[0]?.id}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {canUseCard ? (
+            <div className="grid gap-2">
+              <Label>Forma de pagamento</Label>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                value={funding}
+                onValueChange={(value) => {
+                  if (value === 'account' || value === 'card') setFunding(value);
+                }}
+                className="w-full bg-muted/50"
+              >
+                <ToggleGroupItem value="account" className="flex-1">
+                  Conta
+                </ToggleGroupItem>
+                <ToggleGroupItem value="card" className="flex-1">
+                  Crédito
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          ) : isExpense && creditCards.length > 0 && !isPaid ? (
+            <div className="grid gap-1.5">
+              <Label>Forma de pagamento</Label>
+              <select className={nativeSelectClassName} disabled defaultValue="account">
+                <option value="account">Conta (obrigação pendente)</option>
+              </select>
+            </div>
+          ) : null}
+
+          {useCard ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor="new-creditCardId">Cartão</Label>
+              <select
+                id="new-creditCardId"
+                className={nativeSelectClassName}
+                required
+                value={selectedCardId}
+                onChange={(event) => setSelectedCardId(event.target.value)}
+              >
+                {creditCards.map((card) => (
+                  <option key={card.id} value={card.id}>
+                    {formatCreditCardPaymentMethodLabel({
+                      cardName: card.name,
+                      lastFour: card.lastFour ?? null,
+                    })}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Forma no crédito — fatura do ciclo; banco/conta só como vínculo.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-1.5">
+                <Label htmlFor="new-accountId">Conta</Label>
+                <select
+                  id="new-accountId"
+                  name="accountId"
+                  className={nativeSelectClassName}
+                  required
+                  defaultValue={accounts[0]?.id}
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {isExpense ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="new-paymentRail">Meio (opcional)</Label>
+                  <select
+                    id="new-paymentRail"
+                    name="paymentRail"
+                    className={nativeSelectClassName}
+                    defaultValue=""
+                  >
+                    <option value="">—</option>
+                    {PAYMENT_RAILS.map((rail) => (
+                      <option key={rail} value={rail}>
+                        {PAYMENT_RAIL_LABEL[rail]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </>
+          )}
 
           <div className="grid gap-1.5">
             <Label htmlFor="new-notes">Notas (criptografadas)</Label>
@@ -210,7 +331,13 @@ export function NewTransactionSheet({
           </div>
 
           <SubmitButton className="mt-2" pendingLabel="Salvando…">
-            {isPaid ? 'Salvar no extrato' : isExpense ? 'Adicionar a pagar' : 'Adicionar a receber'}
+            {isPaid
+              ? useCard
+                ? 'Salvar na fatura'
+                : 'Salvar no extrato'
+              : isExpense
+                ? 'Adicionar a pagar'
+                : 'Adicionar a receber'}
           </SubmitButton>
         </ActionForm>
       </SheetContent>

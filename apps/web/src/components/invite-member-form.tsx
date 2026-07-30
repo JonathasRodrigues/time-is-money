@@ -1,41 +1,46 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { MEMBER_ROLE_LABEL } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { nativeSelectClassName } from '@/components/page-header';
-import { inviteMemberAction } from '@/server/members-actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { inviteMemberAction } from '@/lib/api/mutations';
 
 const ROLE_OPTIONS = ['viewer', 'editor', 'admin'] as const;
 
 export function InviteMemberForm(): React.ReactElement {
-  const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
+  const [pending, setPending] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
 
-  function onSubmit(formData: FormData): void {
-    startTransition(async () => {
-      try {
-        const result = await inviteMemberAction(formData);
+  function onSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setPending(true);
+    void run(() => inviteMemberAction(formData), {
+      loading: 'Convidando…',
+      success: 'Convite registrado',
+      invalidate: 'members',
+    })
+      .then((result) => {
         setLastInviteUrl(result.inviteUrl);
-        toast.success(
-          result.emailSent
-            ? 'Convite enviado por e-mail'
-            : 'Convite criado — copie o link (e-mail não configurado)',
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Falha ao convidar';
-        toast.error(message);
-      }
-    });
+      })
+      .catch(() => {
+        // toast handled in run
+      })
+      .finally(() => {
+        setPending(false);
+      });
   }
 
   return (
     <div className="space-y-4">
-      <form action={onSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <form onSubmit={onSubmit} className="grid gap-4">
+        <div className="grid gap-1.5">
           <Label htmlFor="invite-email">E-mail</Label>
           <Input
             id="invite-email"
@@ -46,7 +51,7 @@ export function InviteMemberForm(): React.ReactElement {
             disabled={pending}
           />
         </div>
-        <div className="flex w-full flex-col gap-1.5 sm:w-44">
+        <div className="grid gap-1.5">
           <Label htmlFor="invite-role">Papel</Label>
           <select
             id="invite-role"
@@ -63,12 +68,12 @@ export function InviteMemberForm(): React.ReactElement {
           </select>
         </div>
         <Button type="submit" disabled={pending}>
-          {pending ? 'Convidando…' : 'Convidar'}
+          {pending ? 'Convidando…' : 'Enviar convite'}
         </Button>
       </form>
 
       {lastInviteUrl ? (
-        <div className="rounded-md border bg-muted/40 p-3 text-sm">
+        <div className="rounded-xl border bg-muted/40 p-3 text-sm">
           <p className="mb-1 font-medium">Link do convite</p>
           <p className="break-all text-muted-foreground">{lastInviteUrl}</p>
           <Button

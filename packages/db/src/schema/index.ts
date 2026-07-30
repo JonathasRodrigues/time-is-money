@@ -1,3 +1,4 @@
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   boolean,
   index,
@@ -25,7 +26,12 @@ export const financingCategoryEnum = pgEnum('financing_category', [
   'personal',
   'other',
 ]);
-export const planKindEnum = pgEnum('plan_kind', ['travel', 'financing_payoff', 'custom']);
+export const planKindEnum = pgEnum('plan_kind', [
+  'travel',
+  'financing_payoff',
+  'real_estate_amortization',
+  'custom',
+]);
 export const importStatusEnum = pgEnum('import_status', [
   'pending',
   'preview',
@@ -118,8 +124,19 @@ export const categoryAliases = pgTable('category_aliases', {
   alias: varchar('alias', { length: 120 }).notNull(),
 });
 
-export const accountKindEnum = pgEnum('account_kind', ['cash', 'checking', 'investment_pot']);
+export const accountKindEnum = pgEnum('account_kind', [
+  'cash',
+  'checking',
+  'savings',
+  'investment_pot',
+]);
 export const yieldTypeEnum = pgEnum('yield_type', ['none', 'cdi', 'fixed_annual']);
+export const cardModeEnum = pgEnum('card_mode', ['credit', 'debit', 'both']);
+export const creditCardInvoiceStatusEnum = pgEnum('credit_card_invoice_status', [
+  'open',
+  'closed',
+  'paid',
+]);
 
 export const institutions = pgTable('institutions', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -142,7 +159,9 @@ export const accounts = pgTable('accounts', {
   institutionId: uuid('institution_id').references(() => institutions.id, {
     onDelete: 'set null',
   }),
-  parentAccountId: uuid('parent_account_id'),
+  parentAccountId: uuid('parent_account_id').references((): AnyPgColumn => accounts.id, {
+    onDelete: 'set null',
+  }),
   name: varchar('name', { length: 120 }).notNull(),
   kind: accountKindEnum('kind').notNull().default('checking'),
   /** Saldo informado (snapshot manual). */
@@ -157,6 +176,63 @@ export const accounts = pgTable('accounts', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Cartão de crédito (passivo): limite + saldo da fatura aberta. */
+export const creditCards = pgTable(
+  'credit_cards',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id, { onDelete: 'restrict' }),
+    /** Conta corrente (ou outra) usada para pagar a fatura. */
+    paymentAccountId: uuid('payment_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'restrict' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    lastFour: varchar('last_four', { length: 4 }),
+    /** Crédito, débito ou os dois (cartão combo). */
+    cardMode: cardModeEnum('card_mode').notNull().default('credit'),
+    creditLimitCents: integer('credit_limit_cents').notNull().default(0),
+    /** Saldo atual da fatura (quanto deve). */
+    invoiceBalanceCents: integer('invoice_balance_cents').notNull().default(0),
+    closingDay: integer('closing_day').notNull(),
+    dueDay: integer('due_day').notNull(),
+    isArchived: boolean('is_archived').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('credit_cards_household_idx').on(table.householdId)],
+);
+
+/** Ciclo de fatura do cartão (fechamento → vencimento). */
+export const creditCardInvoices = pgTable(
+  'credit_card_invoices',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    creditCardId: uuid('credit_card_id')
+      .notNull()
+      .references(() => creditCards.id, { onDelete: 'cascade' }),
+    closesOn: varchar('closes_on', { length: 10 }).notNull(),
+    dueOn: varchar('due_on', { length: 10 }).notNull(),
+    status: creditCardInvoiceStatusEnum('status').notNull().default('open'),
+    /** Total já liquidado nesta fatura (pagamentos parciais). */
+    amountPaidCents: integer('amount_paid_cents').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('credit_card_invoices_household_idx').on(table.householdId),
+    index('credit_card_invoices_card_idx').on(table.creditCardId),
+    uniqueIndex('credit_card_invoices_card_closes_uidx').on(table.creditCardId, table.closesOn),
+  ],
+);
 
 export const accountTransfers = pgTable(
   'account_transfers',
@@ -201,6 +277,7 @@ export const transactionSeries = pgTable('transaction_series', {
   interval: seriesIntervalEnum('interval').notNull().default('monthly'),
   dueDay: integer('due_day').notNull(),
   defaultAmountCents: integer('default_amount_cents'),
+  defaultPaymentRail: varchar('default_payment_rail', { length: 16 }),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -222,6 +299,16 @@ export const transactions = pgTable(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.id),
+    /** Se preenchido, despesa no cartão (aumenta fatura; não mexe no saldo da conta). */
+    creditCardId: uuid('credit_card_id').references(() => creditCards.id, {
+      onDelete: 'set null',
+    }),
+    /** Ciclo de fatura que recebeu a compra no cartão. */
+    creditCardInvoiceId: uuid('credit_card_invoice_id').references(() => creditCardInvoices.id, {
+      onDelete: 'set null',
+    }),
+    /** Meio de pagamento na conta: pix | debit | ted | boleto | cash | other. */
+    paymentRail: varchar('payment_rail', { length: 16 }),
     type: transactionTypeEnum('type').notNull(),
     status: transactionStatusEnum('status').notNull().default('paid'),
     amountCents: integer('amount_cents'),

@@ -4,9 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
-function isDemoModeEnv(): boolean {
-  return process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
-}
+import { isDemoMode, isMockApiMode } from '@tim/mocks';
 
 /** Chaves Clerk presentes (podem existir mesmo em demo). */
 export function isClerkConfigured(): boolean {
@@ -19,7 +17,7 @@ export function isClerkConfigured(): boolean {
  * Em DEMO_MODE o mock manda — ignora chaves Clerk quebradas/ausentes.
  */
 export function shouldUseClerk(): boolean {
-  if (isDemoModeEnv()) return false;
+  if (isDemoMode() || isMockApiMode()) return false;
   return isClerkConfigured();
 }
 

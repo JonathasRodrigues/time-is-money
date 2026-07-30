@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { formatCentsForBrInput, normalizeMoneyFormValue, parseBrlToCents } from '@tim/domain';
 import { Button } from '@/components/ui/button';
@@ -20,9 +20,14 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ActionForm } from '@/components/action-form';
-import { createMonthlySeriesAction, createPendingTransactionAction } from '@/server/actions';
+import { createMonthlySeriesAction, createPayableExpenseAction } from '@/lib/api/mutations';
+import { type PaymentMethodOption } from '@/components/payment-method-options';
+import { PaymentMethodSelectGroups } from '@/components/payment-method-select-groups';
 
 type PayableFormKind = 'variable' | 'fixed';
+
+/** Valor especial: forma definida só na quitação. */
+const DEFER_METHOD_ID = '';
 
 function parseAmountToCents(raw: string): number | null {
   const cents = parseBrlToCents(raw);
@@ -44,7 +49,7 @@ function formatBrl(cents: number): string {
 const KIND_META: Record<PayableFormKind, { title: string; description: string; submit: string }> = {
   variable: {
     title: 'Conta variável',
-    description: 'Pontual neste período — vacina, mecânico…',
+    description: 'Pontual neste período — vacina, mecânico, compra no cartão…',
     submit: 'Adicionar à fila',
   },
   fixed: {
@@ -58,24 +63,52 @@ export function NewPayableSheet({
   centers,
   expenseCategories,
   accounts,
+  paymentMethods = [],
+  creditCards = [],
   defaultCostCenterId,
   defaultDueOn,
 }: {
   centers: Array<{ id: string; name: string }>;
   expenseCategories: Array<{ id: string; name: string }>;
   accounts: Array<{ id: string; name: string }>;
+  paymentMethods?: PaymentMethodOption[];
+  creditCards?: Array<{ id: string; paymentAccountId: string }>;
   defaultCostCenterId?: string;
   defaultDueOn: string;
 }): React.ReactElement {
   const [kind, setKind] = useState<PayableFormKind>('variable');
+  const [status, setStatus] = useState<'paid' | 'pending'>('pending');
+  const [methodId, setMethodId] = useState(DEFER_METHOD_ID);
   const [parcelar, setParcelar] = useState(false);
   const [installmentCount, setInstallmentCount] = useState(2);
   const [parcelAmount, setParcelAmount] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [amountSource, setAmountSource] = useState<'parcel' | 'total'>('parcel');
+
   const meta = KIND_META[kind];
   const categories = expenseCategories;
-  const isParcelado = parcelar && installmentCount > 1;
+
+  const accountMethods = useMemo(
+    () => paymentMethods.filter((method) => method.type === 'account'),
+    [paymentMethods],
+  );
+  const cardMethods = useMemo(
+    () => paymentMethods.filter((method) => method.type === 'credit_card'),
+    [paymentMethods],
+  );
+
+  /** Fixas: só formas na conta (ou definir depois). Crédito só em variável. */
+  const selectableMethods = kind === 'fixed' ? accountMethods : paymentMethods;
+  const selectedMethod =
+    methodId === DEFER_METHOD_ID
+      ? null
+      : (selectableMethods.find((method) => method.id === methodId) ?? null);
+  const useCard = kind === 'variable' && selectedMethod?.type === 'credit_card';
+  /** Crédito = compra já no cartão (sempre “pago” na fatura). */
+  const isPaid = useCard || status === 'paid';
+  const allowDefer = !isPaid;
+
+  const isParcelado = !isPaid && !useCard && parcelar && installmentCount > 1;
   const effectiveInstallmentCount = isParcelado ? installmentCount : 1;
 
   const parcelCents = parseAmountToCents(parcelAmount);
@@ -83,6 +116,15 @@ export function NewPayableSheet({
   const canSubmitParcelado = totalCents != null && totalCents > 0;
   const totalAmountForSubmit =
     totalCents != null ? normalizeMoneyFormValue(formatCentsForBrInput(totalCents)) : '';
+
+  const fallbackAccountId = (() => {
+    if (useCard && selectedMethod?.creditCardId) {
+      const card = creditCards.find((item) => item.id === selectedMethod.creditCardId);
+      if (card) return card.paymentAccountId;
+    }
+    if (selectedMethod?.accountId) return selectedMethod.accountId;
+    return accounts[0]?.id ?? accountMethods[0]?.accountId ?? '';
+  })();
 
   function syncFromParcel(raw: string, count: number) {
     setParcelAmount(raw);
@@ -129,6 +171,73 @@ export function NewPayableSheet({
     }
   }
 
+  function onMethodChange(nextId: string) {
+    setMethodId(nextId);
+    const next = selectableMethods.find((method) => method.id === nextId);
+    if (next?.type === 'credit_card') {
+      setParcelar(false);
+      setStatus('paid');
+    }
+  }
+
+  function onStatusChange(next: 'paid' | 'pending') {
+    setStatus(next);
+    if (next === 'pending') {
+      if (selectedMethod?.type === 'credit_card') {
+        setMethodId(DEFER_METHOD_ID);
+      }
+    } else {
+      setParcelar(false);
+      if (methodId === DEFER_METHOD_ID && accountMethods[0]) {
+        setMethodId(accountMethods[0].id);
+      }
+    }
+  }
+
+  const variableSuccess = useCard
+    ? 'Compra adicionada à fatura do cartão'
+    : isPaid
+      ? 'Pagamento registrado'
+      : 'Adicionado em contas a pagar';
+  const variableSubmit = useCard
+    ? 'Salvar na fatura'
+    : isPaid
+      ? 'Registrar pago'
+      : isParcelado
+        ? `Criar ${installmentCount} parcelas`
+        : meta.submit;
+
+  const dateLabel = useCard
+    ? 'Data da compra'
+    : isPaid
+      ? 'Data do pagamento'
+      : isParcelado
+        ? '1ª parcela'
+        : 'Vencimento';
+
+  const dateHint = useCard
+    ? 'Pode ser retroativa — define o ciclo da fatura. A compra não aparece item a item em a pagar.'
+    : isPaid
+      ? 'Pode ser retroativa (ex.: ontem). Saldo e extrato usam esta data.'
+      : isParcelado
+        ? 'Vencimento da primeira parcela.'
+        : 'Quando a conta vence.';
+
+  const methodHint = useCard
+    ? 'Compra no crédito → entra na fatura; a conta só sai depois, ao quitar a fatura.'
+    : isPaid
+      ? 'Debita a conta vinculada a esta forma na data do pagamento.'
+      : methodId === DEFER_METHOD_ID
+        ? 'Na quitação você escolhe PIX, débito, TED ou crédito.'
+        : 'Sugestão para a quitação — você pode mudar na hora de pagar.';
+
+  const amountRequired = isPaid;
+  const canSubmitPaid =
+    !isPaid ||
+    (useCard
+      ? Boolean(selectedMethod?.creditCardId)
+      : Boolean(selectedMethod?.type === 'account' && selectedMethod.accountId));
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -140,10 +249,12 @@ export function NewPayableSheet({
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Adicionar despesa</SheetTitle>
-          <SheetDescription>Conta pontual, parcelada ou fixa mensal.</SheetDescription>
+          <SheetDescription>
+            Já pago (PIX/conta ou crédito) ou pendente. No crédito, a compra entra na fatura.
+          </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-4 grid gap-4 px-4 pb-6">
+        <div className="grid gap-4">
           <ToggleGroup
             type="single"
             variant="outline"
@@ -153,6 +264,9 @@ export function NewPayableSheet({
             onValueChange={(value) => {
               if (value === 'variable' || value === 'fixed') {
                 setKind(value);
+                if (value === 'fixed' && selectedMethod?.type === 'credit_card') {
+                  setMethodId(DEFER_METHOD_ID);
+                }
               }
             }}
             className="w-full justify-stretch bg-muted/40"
@@ -173,33 +287,96 @@ export function NewPayableSheet({
 
           {kind === 'variable' ? (
             <ActionForm
-              action={createPendingTransactionAction}
+              action={createPayableExpenseAction}
               loadingMessage="Criando…"
-              successMessage="Adicionado em contas a pagar"
+              successMessage={variableSuccess}
               className="grid gap-3"
             >
               <input type="hidden" name="installmentCount" value={effectiveInstallmentCount} />
+              <input type="hidden" name="accountId" value={fallbackAccountId} />
+              <input type="hidden" name="status" value={isPaid ? 'paid' : 'pending'} />
+              {selectedMethod?.type === 'account' && selectedMethod.paymentRail ? (
+                <input type="hidden" name="paymentRail" value={selectedMethod.paymentRail} />
+              ) : null}
+              {useCard && selectedMethod?.creditCardId ? (
+                <input type="hidden" name="creditCardId" value={selectedMethod.creditCardId} />
+              ) : null}
               {isParcelado ? (
                 <input type="hidden" name="amount" value={totalAmountForSubmit} />
               ) : null}
+
               <div className="grid gap-1.5">
                 <Label htmlFor="var-desc">Descrição</Label>
-                <Input id="var-desc" name="description" required placeholder="Mecânico · revisão" />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="var-due">{isParcelado ? '1ª parcela' : 'Vencimento'}</Label>
-                <DateInput id="var-due" name="dueOn" required defaultValue={defaultDueOn} />
+                <Input
+                  id="var-desc"
+                  name="description"
+                  required
+                  placeholder={isPaid ? 'Sorvete · padaria' : 'Mecânico · revisão'}
+                />
               </div>
 
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border border-input accent-primary"
-                  checked={parcelar}
-                  onChange={(event) => toggleParcelar(event.target.checked)}
-                />
-                Parcelado
-              </label>
+              <div className="grid gap-2">
+                <Label>Situação</Label>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  spacing={0}
+                  value={useCard ? 'paid' : status}
+                  onValueChange={(value) => {
+                    if (value === 'paid' || value === 'pending') onStatusChange(value);
+                  }}
+                  className="w-full bg-muted/50"
+                >
+                  <ToggleGroupItem
+                    value="pending"
+                    className="flex-1 px-2 text-xs sm:text-sm"
+                    disabled={useCard}
+                  >
+                    Ainda não paguei
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="paid" className="flex-1 px-2 text-xs sm:text-sm">
+                    Já paguei
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <p className="text-xs text-muted-foreground">
+                  {useCard
+                    ? 'No crédito a compra já está na fatura do cartão.'
+                    : isPaid
+                      ? 'Registra como pago (extrato + saldo). Escolha a data do pagamento abaixo — inclusive no passado.'
+                      : 'Fica em Contas a pagar até você quitar.'}
+                </p>
+              </div>
+
+              <PaymentMethodField
+                id="var-method"
+                value={methodId}
+                onChange={onMethodChange}
+                accountMethods={accountMethods}
+                cardMethods={cardMethods}
+                allowCard
+                allowDefer={allowDefer}
+                hint={methodHint}
+                required={isPaid}
+              />
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="var-due">{dateLabel}</Label>
+                <DateInput id="var-due" name="dueOn" required defaultValue={defaultDueOn} />
+                <p className="text-[11px] text-muted-foreground">{dateHint}</p>
+              </div>
+
+              {!isPaid ? (
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border border-input accent-primary"
+                    checked={parcelar}
+                    onChange={(event) => toggleParcelar(event.target.checked)}
+                  />
+                  Parcelado
+                </label>
+              ) : null}
 
               {isParcelado ? (
                 <div className="grid gap-3">
@@ -257,20 +434,32 @@ export function NewPayableSheet({
                 </div>
               ) : (
                 <div className="grid gap-1.5">
-                  <Label htmlFor="var-amount">Valor (R$) — opcional</Label>
-                  <MoneyInput id="var-amount" name="amount" min="0" placeholder="Opcional" />
+                  <Label htmlFor="var-amount">
+                    Valor (R$){amountRequired ? '' : ' — opcional'}
+                  </Label>
+                  <MoneyInput
+                    id="var-amount"
+                    name="amount"
+                    min={amountRequired ? '0.01' : '0'}
+                    required={amountRequired}
+                    placeholder={amountRequired ? 'Obrigatório' : 'Opcional'}
+                  />
                 </div>
               )}
 
-              <CenterCategoryAccountFields
+              <CenterCategoryFields
                 prefix="var"
                 centers={centers}
                 categories={categories}
-                accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <SubmitButton disabled={isParcelado && !canSubmitParcelado} pendingLabel="Criando…">
-                {isParcelado ? `Criar ${installmentCount} parcelas` : meta.submit}
+              <SubmitButton
+                disabled={
+                  (isParcelado && !canSubmitParcelado) || fallbackAccountId === '' || !canSubmitPaid
+                }
+                pendingLabel="Criando…"
+              >
+                {variableSubmit}
               </SubmitButton>
             </ActionForm>
           ) : null}
@@ -283,10 +472,26 @@ export function NewPayableSheet({
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="expense" />
+              <input type="hidden" name="accountId" value={fallbackAccountId} />
+              {selectedMethod?.type === 'account' && selectedMethod.paymentRail ? (
+                <input type="hidden" name="paymentRail" value={selectedMethod.paymentRail} />
+              ) : null}
+
               <div className="grid gap-1.5">
                 <Label htmlFor="fix-desc">Descrição</Label>
                 <Input id="fix-desc" name="description" required placeholder="Energia elétrica" />
               </div>
+
+              <PaymentMethodField
+                id="fix-method"
+                value={methodId}
+                onChange={onMethodChange}
+                accountMethods={accountMethods}
+                cardMethods={[]}
+                allowCard={false}
+                allowDefer
+              />
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="grid gap-1.5">
                   <Label htmlFor="fix-day">Dia do vencimento</Label>
@@ -310,14 +515,15 @@ export function NewPayableSheet({
                   />
                 </div>
               </div>
-              <CenterCategoryAccountFields
+              <CenterCategoryFields
                 prefix="fix"
                 centers={centers}
                 categories={categories}
-                accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <SubmitButton pendingLabel="Criando…">{meta.submit}</SubmitButton>
+              <SubmitButton disabled={fallbackAccountId === ''} pendingLabel="Criando…">
+                {meta.submit}
+              </SubmitButton>
             </ActionForm>
           ) : null}
         </div>
@@ -326,17 +532,66 @@ export function NewPayableSheet({
   );
 }
 
-function CenterCategoryAccountFields({
+function PaymentMethodField({
+  id,
+  value,
+  onChange,
+  accountMethods,
+  cardMethods,
+  allowCard,
+  allowDefer,
+  hint,
+  required = false,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+  accountMethods: PaymentMethodOption[];
+  cardMethods: PaymentMethodOption[];
+  allowCard: boolean;
+  allowDefer: boolean;
+  hint?: string;
+  required?: boolean;
+}): React.ReactElement {
+  const effectiveHint =
+    hint ??
+    (value === DEFER_METHOD_ID
+      ? 'Na quitação você escolhe PIX, débito, TED ou crédito.'
+      : allowCard && cardMethods.some((m) => m.id === value)
+        ? 'Compra no crédito → vai direto para a fatura do cartão.'
+        : 'Sugestão para a quitação — você pode mudar na hora de pagar.');
+
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={id}>Forma de pagamento</Label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={nativeSelectClassName}
+        required={required && value === DEFER_METHOD_ID ? false : required}
+      >
+        {allowDefer ? <option value={DEFER_METHOD_ID}>Definir na hora de pagar</option> : null}
+        <PaymentMethodSelectGroups
+          accountMethods={accountMethods}
+          cardMethods={cardMethods}
+          showCards={allowCard}
+        />
+      </select>
+      <p className="text-[11px] text-muted-foreground">{effectiveHint}</p>
+    </div>
+  );
+}
+
+function CenterCategoryFields({
   prefix,
   centers,
   categories,
-  accounts,
   defaultCostCenterId,
 }: {
   prefix: string;
   centers: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string }>;
-  accounts: Array<{ id: string; name: string }>;
   defaultCostCenterId?: string;
 }): React.ReactElement {
   return (
@@ -369,22 +624,6 @@ function CenterCategoryAccountFields({
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor={`${prefix}-acc`}>Conta</Label>
-        <select
-          id={`${prefix}-acc`}
-          name="accountId"
-          required
-          className={nativeSelectClassName}
-          defaultValue={accounts[0]?.id}
-        >
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
             </option>
           ))}
         </select>

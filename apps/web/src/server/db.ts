@@ -1,6 +1,8 @@
+import { cache } from 'react';
 import type { AuthSession } from '@tim/auth';
 import { createDb, memberships, type Database } from '@tim/db';
-import { DEMO, getDemoSession, isDemoMode } from '@tim/mocks';
+import { DEMO, getDemoSession, isDemoMode, isMockApiMode } from '@tim/mocks';
+import { MOCK_IDS } from '@tim/mocks/api';
 import type { Role } from '@tim/permissions';
 import { eq } from 'drizzle-orm';
 import { env } from '@/env';
@@ -26,7 +28,11 @@ export function getEncryptionSecret(): string {
   return env.ENCRYPTION_SECRET;
 }
 
-export async function getAuthSession(): Promise<AuthSession | null> {
+async function loadAuthSession(): Promise<AuthSession | null> {
+  if (isMockApiMode()) {
+    return getDemoSession(MOCK_IDS.householdId);
+  }
+
   if (isDemoMode()) {
     if (!env.DATABASE_URL) {
       return getDemoSession('');
@@ -91,3 +97,6 @@ export async function getAuthSession(): Promise<AuthSession | null> {
     mfaEnabled,
   };
 }
+
+/** Dedupes Clerk + membership lookup within a single RSC/request. */
+export const getAuthSession = cache(loadAuthSession);

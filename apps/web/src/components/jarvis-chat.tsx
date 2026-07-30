@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { Mic, SendHorizontal } from 'lucide-react';
-import { sendJarvisMessageAction } from '@/server/jarvis-actions';
+import { sendJarvisMessageAction } from '@/lib/api/mutations';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

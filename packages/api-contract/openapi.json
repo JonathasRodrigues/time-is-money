@@ -1,0 +1,88 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Time is Money API",
+    "version": "1.0.0",
+    "description": "REST contract shared by web and React Native. Additive-only within /api/v1. See docs/api/versioning.md."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin (web) or EXPO_PUBLIC_API_URL (mobile)"
+    }
+  ],
+  "x-tim-api-major": 1,
+  "x-tim-api-base": "/api/v1",
+  "paths": {
+    "/api/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Current session user and capabilities",
+        "security": [{ "clerkSession": [] }, { "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "MeResponse" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/bootstrap": {
+      "get": {
+        "operationId": "getBootstrap",
+        "summary": "Prefs and lookup lists for app shell",
+        "security": [{ "clerkSession": [] }, { "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "BootstrapResponse" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/income-prompt": {
+      "get": {
+        "operationId": "getIncomePrompt",
+        "summary": "Whether to show income receipt banner (no side effects)",
+        "security": [{ "clerkSession": [] }, { "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "IncomePromptResponse" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/payments/ensure-instances": {
+      "post": {
+        "operationId": "ensurePaymentInstances",
+        "summary": "Materialize fixed series instances for a month",
+        "security": [{ "clerkSession": [] }, { "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "EnsureInstancesResponse" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenApi",
+        "summary": "OpenAPI document for this major",
+        "responses": {
+          "200": { "description": "OpenAPI 3.1 JSON" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "clerkSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__session",
+        "description": "Clerk session cookie (web)"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Clerk session JWT (React Native)"
+      }
+    }
+  }
+}

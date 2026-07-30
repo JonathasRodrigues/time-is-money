@@ -4,7 +4,7 @@ import { MEMBER_ROLE_LABEL } from '@tim/domain';
 import type { Role } from '@tim/permissions';
 import { ActionForm } from '@/components/action-form';
 import { nativeSelectClassName } from '@/components/page-header';
-import { updateMemberRoleAction } from '@/server/members-actions';
+import { updateMemberRoleAction } from '@/lib/api/mutations';
 
 const ROLE_OPTIONS: Role[] = ['viewer', 'editor', 'admin'];
 
@@ -22,6 +22,7 @@ export function MemberRoleSelect({
       action={updateMemberRoleAction}
       successMessage="Papel atualizado"
       loadingMessage="Atualizando…"
+      invalidate="members"
       className="flex items-center gap-2"
     >
       <input type="hidden" name="membershipId" value={membershipId} />

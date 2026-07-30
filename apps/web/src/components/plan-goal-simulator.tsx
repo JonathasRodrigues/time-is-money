@@ -8,6 +8,7 @@ import {
   MONTH_LABEL_PT,
   parseBrlToCents,
   simulateSavingsGoal,
+  sumPlanItems,
   type SavingsLumpRule,
 } from '@tim/domain';
 import { nativeSelectClassName } from '@/components/page-header';
@@ -16,11 +17,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
 
+export interface PlanGoalItem {
+  label: string;
+  amountCents: number;
+}
+
 interface PlanGoalSimulatorProps {
+  /** Meta total; se `items` for passado com valores, a soma dos itens prevalece. */
   targetCents: number;
   savedCents: number;
   targetDate: string;
   defaultMonthlyCents?: number | null;
+  /** Detalhamento da meta (hotel, passagem…). A soma vira a meta do simulador. */
+  items?: readonly PlanGoalItem[];
 }
 
 type DraftLump =
@@ -73,6 +82,7 @@ export function PlanGoalSimulator({
   savedCents,
   targetDate,
   defaultMonthlyCents,
+  items,
 }: PlanGoalSimulatorProps): React.ReactElement {
   const initialMonthly =
     defaultMonthlyCents != null && defaultMonthlyCents > 0
@@ -90,10 +100,25 @@ export function PlanGoalSimulator({
   const annualInflationBps = Math.round((Number(inflationPercent.replace(',', '.')) || 0) * 100);
   const parsedLumps = useMemo(() => draftToLumps(lumps), [lumps]);
 
+  const breakdownItems = useMemo(() => {
+    if (items == null || items.length === 0) return [];
+    return items
+      .map((item) => {
+        const label = item.label.trim();
+        const amountCents = Math.max(0, item.amountCents);
+        if (amountCents <= 0) return null;
+        return { label: label || 'Item', amountCents };
+      })
+      .filter((item): item is PlanGoalItem => item != null);
+  }, [items]);
+
+  const effectiveTargetCents =
+    breakdownItems.length > 0 ? sumPlanItems(breakdownItems) : Math.max(0, targetCents);
+
   const simulation = useMemo(
     () =>
       simulateSavingsGoal({
-        targetCents,
+        targetCents: effectiveTargetCents,
         savedCents,
         monthlyContributionCents: monthlyCents,
         lumps: parsedLumps,
@@ -101,7 +126,15 @@ export function PlanGoalSimulator({
         annualInflationBps: annualInflationBps > 0 ? annualInflationBps : undefined,
         fromDate: today,
       }),
-    [targetCents, savedCents, monthlyCents, parsedLumps, annualYieldBps, annualInflationBps, today],
+    [
+      effectiveTargetCents,
+      savedCents,
+      monthlyCents,
+      parsedLumps,
+      annualYieldBps,
+      annualInflationBps,
+      today,
+    ],
   );
 
   function addLump(type: DraftLump['type']): void {
@@ -119,10 +152,25 @@ export function PlanGoalSimulator({
       <div>
         <p className="text-sm font-semibold">Simulador de reserva</p>
         <p className="text-xs text-muted-foreground">
-          Meta {formatBrlFromCents(targetCents)} · já guardado {formatBrlFromCents(savedCents)} ·
-          alvo {formatIsoDateBr(targetDate)}
+          Meta {formatBrlFromCents(effectiveTargetCents)} · já guardado{' '}
+          {formatBrlFromCents(savedCents)} · alvo {formatIsoDateBr(targetDate)}
         </p>
       </div>
+
+      {breakdownItems.length > 0 ? (
+        <ul className="space-y-1 rounded-md border bg-background/50 px-3 py-2 text-sm">
+          {breakdownItems.map((item, index) => (
+            <li key={`${item.label}-${index}`} className="flex items-center justify-between gap-3">
+              <span className="truncate text-muted-foreground">{item.label}</span>
+              <span className="shrink-0 tabular-nums">{formatBrlFromCents(item.amountCents)}</span>
+            </li>
+          ))}
+          <li className="flex items-center justify-between gap-3 border-t pt-1.5 font-medium">
+            <span>Total da meta</span>
+            <span className="tabular-nums">{formatBrlFromCents(effectiveTargetCents)}</span>
+          </li>
+        </ul>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="flex flex-col gap-1.5">

@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api/index.ts",
+    "./seed": "./src/seed.ts"
   },
   "bin": {
     "tim-demo-seed": "./src/cli.ts"
@@ -13,13 +15,15 @@
     "seed": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
+    "@tim/api-contract": "workspace:*",
     "@tim/auth": "workspace:*",
     "@tim/crypto": "workspace:*",
     "@tim/db": "workspace:*",
     "@tim/domain": "workspace:*",
+    "@tim/permissions": "workspace:*",
     "drizzle-orm": "^0.40.0"
   },
   "devDependencies": {

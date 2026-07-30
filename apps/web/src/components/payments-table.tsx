@@ -1,21 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react';
-import { Loader2 } from 'lucide-react';
-import {
-  formatBrlFromCents,
-  formatCentsForBrInput,
-  formatIsoDateBr,
-  normalizeMoneyFormValue,
-  PAYABLE_KIND_LABEL,
-  parseBrlToCents,
-} from '@tim/domain';
-import type { PayableKind } from '@tim/domain';
+import { useMemo, useOptimistic, useState, useTransition } from 'react';
+import { Loader2, Pencil } from 'lucide-react';
+import { formatBrlFromCents, formatIsoDateBr, PAYABLE_KIND_LABEL } from '@tim/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
-import { MoneyInput } from '@/components/ui/money-input';
 import {
   Table,
   TableBody,
@@ -24,68 +15,105 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { beginActionToast, runWithToast } from '@/lib/action-toast';
+import { PayableRowDialog, type PayableDialogIntent } from '@/components/payable-row-dialog';
 import {
-  payTransactionAction,
-  payTransactionsBulkAction,
-  updatePendingAmountAction,
-} from '@/server/actions';
+  defaultPaymentMethodId,
+  methodLacksBalance,
+  payAmountCents,
+  uniqueAccountMethods,
+  type PayableRow,
+  type PaymentAccountOption,
+  type PaymentMethodOption,
+} from '@/components/payment-method-options';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { payPayablesBulkAction } from '@/lib/api/mutations';
+import { toast } from 'sonner';
 
-export interface PayableRow {
-  id: string;
-  dueOn: string | null;
-  description: string | null;
-  kind: PayableKind;
-  costCenterName: string;
-  categoryName: string;
-  amountCents: number | null;
-  suggestedCents: number | null;
-  estimatedCents: number;
-}
+export type {
+  PayableRow,
+  PaymentAccountOption,
+  PaymentMethodOption,
+} from '@/components/payment-method-options';
 
-type OptimisticAction =
-  | { type: 'remove'; ids: string[] }
-  | { type: 'patchAmount'; id: string; amountCents: number | null };
+export {
+  methodLacksBalance,
+  paymentMethodSelectLabel,
+  receiveAccountSelectLabel,
+  uniqueAccountMethods,
+} from '@/components/payment-method-options';
 
-function payAmountCents(row: PayableRow): number | null {
-  if (row.amountCents != null && row.amountCents > 0) return row.amountCents;
-  if (row.suggestedCents != null && row.suggestedCents > 0) return row.suggestedCents;
-  return null;
-}
+type OptimisticAction = { type: 'remove'; ids: string[] };
 
-function amountInputDefault(row: PayableRow): string {
-  const cents = payAmountCents(row);
-  return cents != null ? formatCentsForBrInput(cents) : '';
-}
-
-function defaultPaidOn(row: PayableRow, today: string): string {
-  return row.dueOn ?? today;
-}
-
-function parseAmountFromForm(formData: FormData): number | null {
-  const raw = normalizeMoneyFormValue(String(formData.get('amount') || ''));
-  if (!raw) return null;
-  return parseBrlToCents(raw);
-}
+type DialogState = {
+  rowId: string;
+  intent: PayableDialogIntent;
+};
 
 /**
- * Contas a pagar/receber — update otimista (some da lista na hora).
- * RSC + Server Action ainda revalida em background; a UI não espera.
+ * Contas a pagar/receber — linha limpa: ação principal + Editar (modal).
+ * Bulk permanece na barra quando há seleção.
  */
 export function PaymentsTable({
   rows,
+  accounts,
+  paymentMethods,
   today,
   mode = 'pay',
+  centers = [],
+  categories = [],
 }: {
   rows: PayableRow[];
+  accounts: PaymentAccountOption[];
+  paymentMethods?: PaymentMethodOption[];
   today: string;
   mode?: 'pay' | 'receive';
+  centers?: Array<{ id: string; name: string }>;
+  categories?: Array<{ id: string; name: string }>;
 }): React.ReactElement {
+  const methods = useMemo((): PaymentMethodOption[] => {
+    if (mode === 'receive') {
+      const accountMethods =
+        paymentMethods && paymentMethods.length > 0
+          ? paymentMethods.filter((method) => method.type === 'account')
+          : accounts.map((account) => ({
+              id: `account:${account.id}:pix`,
+              type: 'account' as const,
+              accountId: account.id,
+              creditCardId: null,
+              paymentRail: 'pix' as const,
+              linkedAccountName: account.name,
+              linkedInstitutionName: null,
+              balanceCents: null,
+              label: account.name,
+            }));
+      return uniqueAccountMethods(accountMethods);
+    }
+    if (paymentMethods && paymentMethods.length > 0) {
+      return paymentMethods;
+    }
+    return accounts.flatMap((account) =>
+      (['pix', 'debit', 'ted', 'boleto'] as const).map((rail) => ({
+        id: `account:${account.id}:${rail}`,
+        type: 'account' as const,
+        accountId: account.id,
+        creditCardId: null,
+        paymentRail: rail,
+        linkedAccountName: account.name,
+        linkedInstitutionName: null,
+        balanceCents: null,
+        label: `${account.name} · ${
+          rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'
+        }`,
+      })),
+    );
+  }, [paymentMethods, accounts, mode]);
+
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [paidOns, setPaidOns] = useState<Record<string, string>>({});
   const [applyAllDate, setApplyAllDate] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
   const [, startTransition] = useTransition();
+  const { run, beginToast } = useMutationFeedback();
 
   const [optimisticRows, dispatchOptimistic] = useOptimistic(
     rows,
@@ -94,32 +122,19 @@ export function PaymentsTable({
         const remove = new Set(action.ids);
         return current.filter((row) => !remove.has(row.id));
       }
-      return current.map((row) =>
-        row.id === action.id ? { ...row, amountCents: action.amountCents } : row,
-      );
+      return current;
     },
   );
 
   const isReceive = mode === 'receive';
   const actionVerb = isReceive ? 'Receber' : 'Pagar';
   const actionGerund = isReceive ? 'Recebendo' : 'Pagando';
-  const actionPast = isReceive ? 'Recebido' : 'Pago';
   const dateLabel = isReceive ? 'Recebido em' : 'Pago em';
   const bulkSuccess = isReceive
     ? (count: number) => (count === 1 ? 'Recebimento registrado' : 'Recebimentos registrados')
     : (count: number) => (count === 1 ? 'Pagamento registrado' : 'Pagamentos registrados');
 
   const busy = busyKey != null;
-
-  useEffect(() => {
-    setPaidOns((prev) => {
-      const next: Record<string, string> = {};
-      for (const row of optimisticRows) {
-        next[row.id] = prev[row.id] ?? defaultPaidOn(row, today);
-      }
-      return next;
-    });
-  }, [optimisticRows, today]);
 
   const selectableIds = useMemo(
     () => optimisticRows.filter((row) => payAmountCents(row) != null).map((row) => row.id),
@@ -136,8 +151,19 @@ export function PaymentsTable({
     [selectedRows],
   );
 
+  const selectedLacksBalance = useMemo(() => {
+    if (isReceive) return false;
+    return selectedRows.some((row) => {
+      const methodId = defaultPaymentMethodId(row, methods);
+      const method = methods.find((item) => item.id === methodId) ?? methods[0];
+      return methodLacksBalance(method, payAmountCents(row), { isReceive });
+    });
+  }, [selectedRows, methods, isReceive]);
+
   const allSelectableChecked =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+
+  const activeRow = dialog ? (optimisticRows.find((row) => row.id === dialog.rowId) ?? null) : null;
 
   function toggleAll(checked: boolean): void {
     setSelected(checked ? new Set(selectableIds) : new Set());
@@ -152,94 +178,85 @@ export function PaymentsTable({
     });
   }
 
-  function applyDateToSelected(): void {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(applyAllDate)) return;
-    setPaidOns((prev) => {
-      const next = { ...prev };
-      for (const row of selectedRows) {
-        next[row.id] = applyAllDate;
-      }
-      return next;
-    });
-  }
-
   function paySelected(): void {
-    const items = selectedRows
-      .map((row) => {
-        const amountCents = payAmountCents(row);
-        if (amountCents == null) return null;
-        const paidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) return null;
-        return { transactionId: row.id, amountCents, paidOn };
-      })
-      .filter(
-        (item): item is { transactionId: string; amountCents: number; paidOn: string } =>
-          item != null,
-      );
+    type BulkPayItem = {
+      kind: 'transaction' | 'credit_card_invoice';
+      id: string;
+      amountCents: number;
+      paidOn: string;
+      accountId?: string;
+      creditCardId?: string;
+      paymentRail?: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other';
+      applyToBalance: boolean;
+    };
+
+    const paidOnOverride =
+      applyAllDate && /^\d{4}-\d{2}-\d{2}$/.test(applyAllDate) ? applyAllDate : null;
+
+    const items: BulkPayItem[] = [];
+    for (const row of selectedRows) {
+      const amountCents = payAmountCents(row);
+      if (amountCents == null) continue;
+      const paidOn = paidOnOverride ?? row.dueOn ?? today;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) continue;
+      const methodId = defaultPaymentMethodId(row, methods);
+      const method = methods.find((item) => item.id === methodId) ?? methods[0];
+
+      if (methodLacksBalance(method, amountCents, { isReceive })) {
+        toast.error(
+          `Saldo insuficiente em ${method?.linkedAccountName ?? 'conta'} para ${formatBrlFromCents(amountCents)}.`,
+        );
+        return;
+      }
+
+      if (row.kind === 'credit_card_invoice') {
+        if (!row.creditCardId || !method?.accountId) continue;
+        items.push({
+          kind: 'credit_card_invoice',
+          id: row.id,
+          amountCents,
+          paidOn,
+          creditCardId: row.creditCardId,
+          accountId: method.accountId,
+          paymentRail: method.paymentRail ?? 'pix',
+          applyToBalance: true,
+        });
+        continue;
+      }
+
+      const payWithCard = method?.type === 'credit_card';
+      const item: BulkPayItem = {
+        kind: 'transaction',
+        id: row.id,
+        amountCents,
+        paidOn,
+        applyToBalance: !payWithCard,
+      };
+      if (payWithCard && method?.creditCardId) {
+        item.creditCardId = method.creditCardId;
+      } else if (method?.accountId) {
+        item.accountId = method.accountId;
+        if (method.paymentRail) item.paymentRail = method.paymentRail;
+      }
+      items.push(item);
+    }
 
     if (items.length === 0) return;
-    const ids = items.map((item) => item.transactionId);
-    const toastId = beginActionToast(`${actionGerund} ${items.length}…`);
+    const ids = items.map((item) => item.id);
+    const toastId = beginToast(`${actionGerund} ${items.length}…`);
     setBusyKey('bulk');
     setSelected(new Set());
 
     startTransition(async () => {
       dispatchOptimistic({ type: 'remove', ids });
       try {
-        await runWithToast(() => payTransactionsBulkAction({ items }), {
+        await run(() => payPayablesBulkAction({ items }), {
           toastId,
           success: bulkSuccess(items.length),
-        });
-      } catch {
-        // toast; useOptimistic reverte quando a transition termina sem novo props
-      } finally {
-        setBusyKey(null);
-      }
-    });
-  }
-
-  function saveRow(rowId: string, form: HTMLFormElement): void {
-    const formData = new FormData(form);
-    const amountCents = parseAmountFromForm(formData);
-    const toastId = beginActionToast('Salvando valor…');
-    setBusyKey(`save:${rowId}`);
-
-    startTransition(async () => {
-      dispatchOptimistic({ type: 'patchAmount', id: rowId, amountCents });
-      try {
-        await runWithToast(() => updatePendingAmountAction(formData), {
-          toastId,
-          success: 'Valor atualizado',
+          invalidate: 'money',
         });
       } catch {
         // toast
-      } finally {
-        setBusyKey(null);
-      }
-    });
-  }
-
-  function payRow(rowId: string, form: HTMLFormElement): void {
-    const formData = new FormData(form);
-    const toastId = beginActionToast(
-      isReceive ? 'Registrando recebimento…' : 'Registrando pagamento…',
-    );
-    setBusyKey(`pay:${rowId}`);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.delete(rowId);
-      return next;
-    });
-
-    startTransition(async () => {
-      dispatchOptimistic({ type: 'remove', ids: [rowId] });
-      try {
-        await runWithToast(() => payTransactionAction(formData), {
-          toastId,
-          success: actionPast,
-        });
-      } catch {
-        // toast; lista volta se a action falhar
       } finally {
         setBusyKey(null);
       }
@@ -266,27 +283,13 @@ export function PaymentsTable({
               <Label htmlFor="pay-apply-all" className="text-[11px] text-muted-foreground">
                 Aplicar {dateLabel.toLowerCase()} em todas
               </Label>
-              <div className="flex items-center gap-1.5">
-                <DateInput
-                  id="pay-apply-all"
-                  value={
-                    applyAllDate ||
-                    (selectedRows[0] ? defaultPaidOn(selectedRows[0], today) : today)
-                  }
-                  onValueChange={setApplyAllDate}
-                  className="h-8 w-[9.5rem]"
-                  disabled={busy}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={applyDateToSelected}
-                >
-                  Aplicar
-                </Button>
-              </div>
+              <DateInput
+                id="pay-apply-all"
+                value={applyAllDate || (selectedRows[0]?.dueOn ?? today)}
+                onValueChange={setApplyAllDate}
+                className="h-8 w-[9.5rem]"
+                disabled={busy}
+              />
             </div>
             <Button
               type="button"
@@ -297,7 +300,12 @@ export function PaymentsTable({
             >
               Limpar
             </Button>
-            <Button type="button" size="sm" disabled={busy} onClick={paySelected}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || selectedLacksBalance}
+              onClick={paySelected}
+            >
               {busyKey === 'bulk' ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -308,6 +316,11 @@ export function PaymentsTable({
               )}
             </Button>
           </div>
+          {selectedLacksBalance ? (
+            <p className="basis-full text-xs text-destructive">
+              Uma ou mais contas selecionadas não têm saldo suficiente para o valor.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -328,6 +341,7 @@ export function PaymentsTable({
             <TableHead>Descrição</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Centro</TableHead>
+            <TableHead>{isReceive ? 'Conta' : 'Forma'}</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead className="text-right">Ações</TableHead>
           </TableRow>
@@ -335,23 +349,25 @@ export function PaymentsTable({
         <TableBody>
           {optimisticRows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                Nada pendente neste filtro.
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                {isReceive ? 'Nada a receber neste filtro.' : 'Nada a pagar neste filtro.'}
               </TableCell>
             </TableRow>
           ) : (
             optimisticRows.map((row) => {
               const overdue = (row.dueOn ?? '') < today;
               const canSelect = payAmountCents(row) != null;
-              const rowPaidOn = paidOns[row.id] ?? defaultPaidOn(row, today);
-              const saving = busyKey === `save:${row.id}`;
+              const amount = row.amountCents;
+              const methodId = defaultPaymentMethodId(row, methods);
+              const method = methods.find((item) => item.id === methodId) ?? methods[0];
+              const methodLabel = method
+                ? isReceive
+                  ? method.linkedAccountName?.trim() || method.label
+                  : method.label
+                : '—';
 
               return (
-                <TableRow
-                  key={row.id}
-                  data-state={selected.has(row.id) ? 'selected' : undefined}
-                  className={saving ? 'opacity-70' : undefined}
-                >
+                <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
                   <TableCell>
                     <input
                       type="checkbox"
@@ -381,9 +397,12 @@ export function PaymentsTable({
                     <Badge variant="outline">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
                   </TableCell>
                   <TableCell>{row.costCenterName}</TableCell>
+                  <TableCell className="max-w-[14rem] truncate text-muted-foreground">
+                    {methodLabel}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {row.amountCents != null ? (
-                      formatBrlFromCents(row.amountCents)
+                    {amount != null ? (
+                      formatBrlFromCents(amount)
                     ) : (
                       <span className="text-muted-foreground">
                         — · sugestão{' '}
@@ -394,69 +413,27 @@ export function PaymentsTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <form
-                      className="flex flex-wrap items-end justify-end gap-1.5"
-                      onSubmit={(event) => event.preventDefault()}
-                    >
-                      <input type="hidden" name="transactionId" value={row.id} />
-                      <div className="grid gap-0.5">
-                        <span className="text-[10px] text-muted-foreground">{dateLabel}</span>
-                        <DateInput
-                          name="paidOn"
-                          value={rowPaidOn}
-                          onValueChange={(iso) => {
-                            setPaidOns((prev) => ({
-                              ...prev,
-                              [row.id]: iso || defaultPaidOn(row, today),
-                            }));
-                          }}
-                          className="h-8 w-[9.5rem]"
-                          required
-                          disabled={busy}
-                        />
-                      </div>
-                      <div className="grid gap-0.5">
-                        <span className="text-[10px] text-muted-foreground">Valor</span>
-                        <MoneyInput
-                          name="amount"
-                          min="0"
-                          placeholder="Valor"
-                          defaultValue={amountInputDefault(row)}
-                          className="h-8 w-28"
-                          disabled={busy}
-                        />
-                      </div>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={(event) => {
-                          const form = event.currentTarget.form;
-                          if (form) saveRow(row.id, form);
-                        }}
-                      >
-                        {saving ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" aria-hidden />
-                            Salvando…
-                          </>
-                        ) : (
-                          'Salvar'
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={busy}
-                        onClick={(event) => {
-                          const form = event.currentTarget.form;
-                          if (form) payRow(row.id, form);
-                        }}
+                        disabled={busy || !canSelect}
+                        onClick={() => setDialog({ rowId: row.id, intent: 'pay' })}
                       >
                         {actionVerb}
                       </Button>
-                    </form>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2"
+                        aria-label="Editar"
+                        disabled={busy}
+                        onClick={() => setDialog({ rowId: row.id, intent: 'edit' })}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -464,6 +441,32 @@ export function PaymentsTable({
           )}
         </TableBody>
       </Table>
+
+      {activeRow && dialog ? (
+        <PayableRowDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialog(null);
+          }}
+          intent={dialog.intent}
+          row={activeRow}
+          mode={mode}
+          today={today}
+          paymentMethods={methods}
+          centers={centers}
+          categories={categories}
+          onSettled={(id) => {
+            startTransition(() => {
+              dispatchOptimistic({ type: 'remove', ids: [id] });
+            });
+            setSelected((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

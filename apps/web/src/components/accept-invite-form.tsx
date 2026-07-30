@@ -2,7 +2,7 @@
 
 import { ActionForm } from '@/components/action-form';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { acceptInviteAction } from '@/server/members-actions';
+import { acceptInviteAction } from '@/lib/api/mutations';
 
 export function AcceptInviteForm({
   token,
@@ -20,6 +20,7 @@ export function AcceptInviteForm({
         action={acceptInviteAction}
         successMessage="Convite aceito"
         loadingMessage="Aceitando…"
+        invalidate="session"
       >
         <input type="hidden" name="token" value={token} />
         <SubmitButton className="w-full" size="lg" pendingLabel="Aceitando…">

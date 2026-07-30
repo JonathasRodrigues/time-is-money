@@ -136,6 +136,11 @@ export function PlanScheduleGenerator({
           monthlyTargetCents={monthlyCents > 0 ? monthlyCents : null}
           contributions={contributions}
           onChange={onContributionsChange}
+          items={
+            targetCents > 0
+              ? [{ label: goalName.trim() || 'Meta', amountCents: targetCents }]
+              : undefined
+          }
         />
       ) : null}
     </div>

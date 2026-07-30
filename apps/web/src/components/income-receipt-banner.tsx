@@ -1,25 +1,33 @@
 'use client';
 
-import { useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useState, useOptimistic, useTransition } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { formatBrlFromCents, formatCentsForBrInput } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { MoneyInput } from '@/components/ui/money-input';
-import { beginActionToast, runWithToast } from '@/lib/action-toast';
+import { nativeSelectClassName } from '@/components/page-header';
+import { cn } from '@/lib/utils';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
 import {
   confirmIncomeItemAction,
   confirmIncomeReceiptAction,
   snoozeIncomeReceiptAction,
-} from '@/server/actions';
+} from '@/lib/api/mutations';
 
 export interface PendingIncomeItem {
   id: string;
   description: string;
   dueOn: string;
+  accountId: string;
   amountCents: number | null;
   suggestedCents: number | null;
+}
+
+export interface IncomeAccountOption {
+  id: string;
+  name: string;
 }
 
 /**
@@ -28,11 +36,16 @@ export interface PendingIncomeItem {
 export function IncomeReceiptBanner({
   incomeDay,
   pendingIncomes = [],
+  accounts = [],
 }: {
   incomeDay?: number | null;
   pendingIncomes?: PendingIncomeItem[];
+  accounts?: IncomeAccountOption[];
 }): React.ReactElement {
+  const { run, beginToast } = useMutationFeedback();
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [accountIds, setAccountIds] = useState<Record<string, string>>({});
+  const [applyToBalances, setApplyToBalances] = useState<Record<string, boolean>>({});
   const [, startTransition] = useTransition();
   const [items, removeOptimistic] = useOptimistic(pendingIncomes, (current, id: string) =>
     current.filter((item) => item.id !== id),
@@ -40,6 +53,23 @@ export function IncomeReceiptBanner({
 
   const hasSeries = items.length > 0;
   const busy = busyKey != null;
+
+  useEffect(() => {
+    setAccountIds((prev) => {
+      const next: Record<string, string> = {};
+      for (const item of items) {
+        next[item.id] = prev[item.id] ?? item.accountId;
+      }
+      return next;
+    });
+    setApplyToBalances((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const item of items) {
+        next[item.id] = prev[item.id] ?? false;
+      }
+      return next;
+    });
+  }, [items]);
 
   return (
     <div className="mb-6 rounded-xl border border-primary/25 bg-primary/5 px-4 py-4">
@@ -62,13 +92,14 @@ export function IncomeReceiptBanner({
                 size="sm"
                 disabled={busy}
                 onClick={() => {
-                  const toastId = beginActionToast('Confirmando…');
+                  const toastId = beginToast('Confirmando…');
                   setBusyKey('confirm-day');
                   startTransition(async () => {
                     try {
-                      await runWithToast(() => confirmIncomeReceiptAction(), {
+                      await run(() => confirmIncomeReceiptAction(), {
                         toastId,
                         success: 'Recebimento confirmado',
+                        invalidate: 'money',
                       });
                     } catch {
                       // toast / redirect
@@ -94,13 +125,14 @@ export function IncomeReceiptBanner({
               variant="outline"
               disabled={busy}
               onClick={() => {
-                const toastId = beginActionToast('Ok…');
+                const toastId = beginToast('Ok…');
                 setBusyKey('snooze');
                 startTransition(async () => {
                   try {
-                    await runWithToast(() => snoozeIncomeReceiptAction(), {
+                    await run(() => snoozeIncomeReceiptAction(), {
                       toastId,
                       success: 'Lembrete adiado',
+                      invalidate: 'money',
                     });
                   } catch {
                     // toast / redirect
@@ -129,6 +161,8 @@ export function IncomeReceiptBanner({
             {items.map((item) => {
               const suggestion = item.amountCents ?? item.suggestedCents;
               const active = busyKey === `item:${item.id}`;
+              const rowAccountId = accountIds[item.id] ?? item.accountId;
+              const rowApplyBalance = applyToBalances[item.id] ?? false;
 
               return (
                 <li
@@ -145,18 +179,19 @@ export function IncomeReceiptBanner({
                     </p>
                   </div>
                   <form
-                    className="flex items-center gap-2"
+                    className="flex flex-col items-stretch gap-1.5 sm:items-end"
                     onSubmit={(event) => {
                       event.preventDefault();
                       const formData = new FormData(event.currentTarget);
-                      const toastId = beginActionToast('Confirmando…');
+                      const toastId = beginToast('Confirmando…');
                       setBusyKey(`item:${item.id}`);
                       startTransition(async () => {
                         removeOptimistic(item.id);
                         try {
-                          await runWithToast(() => confirmIncomeItemAction(formData), {
+                          await run(() => confirmIncomeItemAction(formData), {
                             toastId,
                             success: 'Receita confirmada',
+                            invalidate: 'money',
                           });
                         } catch {
                           // toast; lista volta se falhar
@@ -167,32 +202,71 @@ export function IncomeReceiptBanner({
                     }}
                   >
                     <input type="hidden" name="transactionId" value={item.id} />
-                    <DateInput
-                      name="paidOn"
-                      defaultValue={item.dueOn}
-                      className="h-8 w-[9.5rem] bg-background"
-                      required
-                      disabled={busy}
-                    />
-                    <MoneyInput
-                      name="amount"
-                      min="0.01"
-                      required
-                      placeholder="Valor"
-                      defaultValue={suggestion != null ? formatCentsForBrInput(suggestion) : ''}
-                      className="h-8 w-28 bg-background"
-                      disabled={busy}
-                    />
-                    <Button type="submit" size="sm" disabled={busy}>
-                      {active ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" aria-hidden />
-                          Confirmando…
-                        </>
-                      ) : (
-                        'Confirmar'
-                      )}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <DateInput
+                        name="paidOn"
+                        defaultValue={item.dueOn}
+                        className="h-8 w-[9.5rem] bg-background"
+                        required
+                        disabled={busy}
+                      />
+                      {accounts.length > 0 ? (
+                        <select
+                          name="accountId"
+                          value={rowAccountId}
+                          onChange={(event) => {
+                            setAccountIds((prev) => ({
+                              ...prev,
+                              [item.id]: event.target.value,
+                            }));
+                          }}
+                          className={cn(nativeSelectClassName, 'h-8 w-[9.5rem]')}
+                          required
+                          disabled={busy}
+                        >
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                      <MoneyInput
+                        name="amount"
+                        min="0.01"
+                        required
+                        placeholder="Valor"
+                        defaultValue={suggestion != null ? formatCentsForBrInput(suggestion) : ''}
+                        className="h-8 w-28 bg-background"
+                        disabled={busy}
+                      />
+                      <Button type="submit" size="sm" disabled={busy}>
+                        {active ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
+                            Confirmando…
+                          </>
+                        ) : (
+                          'Confirmar'
+                        )}
+                      </Button>
+                    </div>
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        name="applyToBalance"
+                        checked={rowApplyBalance}
+                        onChange={(event) => {
+                          setApplyToBalances((prev) => ({
+                            ...prev,
+                            [item.id]: event.target.checked,
+                          }));
+                        }}
+                        className="size-3.5 rounded border border-input accent-primary"
+                        disabled={busy}
+                      />
+                      Somar ao saldo da conta
+                    </label>
                   </form>
                 </li>
               );

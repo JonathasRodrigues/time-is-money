@@ -50,17 +50,19 @@ Campo `session.mfaEnabled` permanece na API (sempre `true` por compatibilidade) 
 
 ## Mapeamento rota → capability
 
-| Área                         | Capability mínima                     |
-| ---------------------------- | ------------------------------------- |
-| `/dashboard`                 | `dashboard.read` (implícito via auth) |
-| `/transactions` (write)      | `transactions.write`                  |
-| `/financings` (write)        | `financings.write`                    |
-| `/planning` (write)          | `plans.write`                         |
-| `/import-export` (upload)    | `import.write`                        |
-| `/import-export` (download)  | `export.read`                         |
-| `/jarvis` (chat)             | `jarvis.chat`                         |
-| `/jarvis` (criar lançamento) | `jarvis.mutate`                       |
-| `/settings/members`          | `members.manage`                      |
+| Área                                               | Capability mínima                     |
+| -------------------------------------------------- | ------------------------------------- |
+| `/dashboard`                                       | `dashboard.read` (implícito via auth) |
+| `/transactions` (write)                            | `transactions.write`                  |
+| `/cadastros/accounts` (CRUD bancos/contas/cartões) | `settings.write`                      |
+| Pagar fatura de cartão                             | `transactions.write`                  |
+| `/financings` (write)                              | `financings.write`                    |
+| `/planning` (write)                                | `plans.write`                         |
+| `/import-export` (upload)                          | `import.write`                        |
+| `/import-export` (download)                        | `export.read`                         |
+| `/jarvis` (chat)                                   | `jarvis.chat`                         |
+| `/jarvis` (criar lançamento)                       | `jarvis.mutate`                       |
+| `/settings/members`                                | `members.manage`                      |
 
 ## Adicionar nova capability
 

@@ -5,6 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  color-scheme: light;
   /* Marca TIM — finanças clássicas: base fria + teal só onde importa */
   --tim-ink: #152033;
   --tim-accent: #155e4f;
@@ -59,6 +60,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --tim-ink: #eef2f6;
   --tim-accent: #2a9b82;
   --tim-surface: #152033;
@@ -146,17 +148,6 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-ibm-plex), 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-
-  --animate-navigation-progress: navigation-progress 1.2s ease-in-out infinite;
-
-  @keyframes navigation-progress {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(400%);
-    }
-  }
 }
 
 @layer base {

@@ -19,8 +19,8 @@ import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { nativeSelectClassName } from '@/components/page-header';
-import { runWithToast } from '@/lib/action-toast';
-import { deleteFinancingAction, rebuildFinancingAction } from '@/server/actions';
+import { useMutationFeedback } from '@/hooks/use-mutation-feedback';
+import { deleteFinancingAction, rebuildFinancingAction } from '@/lib/api/mutations';
 
 export function RebuildFinancingDialog({
   financing,
@@ -41,6 +41,7 @@ export function RebuildFinancingDialog({
   const [open, setOpen] = useState(false);
   const [system, setSystem] = useState<AmortizationSystem>(financing.system);
   const [pending, startTransition] = useTransition();
+  const { run } = useMutationFeedback();
 
   return (
     <Dialog
@@ -66,12 +67,15 @@ export function RebuildFinancingDialog({
         </DialogHeader>
 
         <form
-          action={async (formData) => {
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               try {
-                await runWithToast(() => rebuildFinancingAction(formData), {
+                await run(() => rebuildFinancingAction(formData), {
                   loading: 'Recalculando…',
                   success: 'Cronograma atualizado',
+                  invalidate: 'financing',
                 });
                 setOpen(false);
               } catch {
@@ -190,9 +194,10 @@ export function RebuildFinancingDialog({
                 fd.set('financingId', financing.id);
                 startTransition(async () => {
                   try {
-                    await runWithToast(() => deleteFinancingAction(fd), {
+                    await run(() => deleteFinancingAction(fd), {
                       loading: 'Excluindo…',
                       success: 'Financiamento excluído',
+                      invalidate: 'financing',
                     });
                     setOpen(false);
                   } catch {

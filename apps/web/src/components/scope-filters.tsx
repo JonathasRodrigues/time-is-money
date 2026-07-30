@@ -9,6 +9,7 @@ import {
   centerFilterOptions,
 } from '@/components/filters';
 import { useSoftNavigate } from '@/components/navigating';
+import { useScopePreference } from '@/components/scope-preference';
 import { buildScopeHref, type DateRange, type ScopeQuery } from '@/lib/scope-query';
 
 /** Filtros de período + centro (Dashboard). */
@@ -31,6 +32,7 @@ export function ScopeFilters({
 }): React.ReactElement {
   const router = useRouter();
   const { isPending, navigate } = useSoftNavigate();
+  const { rememberScope } = useScopePreference();
 
   const baseQuery: ScopeQuery = {
     center: activeCenterId,
@@ -44,6 +46,12 @@ export function ScopeFilters({
   };
 
   function push(query: ScopeQuery): void {
+    rememberScope({
+      period: query.period,
+      from: query.from,
+      to: query.to,
+      center: query.center ?? null,
+    });
     navigate(() => {
       router.push(buildScopeHref(basePath, query), { scroll: false });
     });

@@ -698,14 +698,47 @@ export {
 
 export {
   ACCOUNT_KIND_LABEL,
+  CARD_MODE_LABEL,
+  accountHasSufficientBalance,
+  assertAccountDebitBalance,
+  assertCardPurchase,
+  assertPayInvoice,
   assertTransferAllowed,
+  availableCreditCents,
+  cardHasCredit,
+  cardHasDebit,
   estimateMonthlyYieldCents,
   formatTransferRouteLabel,
   formatYieldLabel,
+  netWorthCents,
+  PAYMENT_RAIL_LABEL,
   YIELD_TYPE_LABEL,
   type AccountKind,
+  type CardMode,
+  type PaymentRail,
   type YieldType,
 } from './wealth';
+
+export {
+  formatAccountPaymentMethodLabel,
+  formatCreditCardPaymentMethodLabel,
+  INSTANT_ACCOUNT_PAYMENT_RAILS,
+  paymentMethodMovesAccountBalance,
+  resolveInvoiceCycle,
+  shouldCloseInvoice,
+  type CardInvoiceCycle,
+  type CreditCardInvoiceStatus,
+} from './card-invoice-cycle';
+
+export {
+  BRAZILIAN_BANKS,
+  CUSTOM_BANK_OPTION_ID,
+  brazilianBankIconUrl,
+  findBrazilianBankById,
+  findBrazilianBankByName,
+  resolveBankCatalogName,
+  type BrazilianBankOption,
+} from './brazilian-banks';
 
 export {
   comparePayoffStrategies,
@@ -721,8 +754,12 @@ export {
   formatMonthsAsDuration,
   labelPayoffExtraRule,
   labelPayoffExtraRules,
+  redistributeContributionsToTarget,
+  pickTrailingInstallmentsForAmortization,
+  recommendPayoffPlansForTargetDate,
   simulatePayoffPlan,
   simulateSavingsGoal,
+  simulateSingleAmortization,
   sumContributions,
   targetDateFromMonthCount,
   FINANCING_CATEGORY_LABEL,
@@ -738,8 +775,10 @@ export {
   type InstallmentBalanceLike,
   type PayoffApplicationMode,
   type PayoffExtraRule,
+  type PayoffPlanRecommendation,
   type PayoffSimulationResult,
   type PayoffStrategyComparison,
+  type PendingInstallmentLike,
   type PlanContributionRow,
   type PlanItemLike,
   type PlanKind,
@@ -747,6 +786,8 @@ export {
   type SavingsGoalSimulation,
   type SavingsLumpRule,
   type SimulatePayoffPlanInput,
+  type SingleAmortizationResult,
+  type TrailingAmortizationSelection,
 } from './planning';
 
 export {
@@ -757,3 +798,19 @@ export {
   MEMBER_ROLE_LABEL,
   normalizeInviteEmail,
 } from './invites';
+
+export type { DateRange, PeriodKey, ScopeQuery } from './scope';
+export {
+  daysBetweenInclusive,
+  formatMonthLabel,
+  formatScopeDateBr,
+  monthBounds,
+  previousRangeOfSameLength,
+  resolveCostCenterId,
+  resolveDateRange,
+  resolveDateRangeWithLegacyMonth,
+  resolvePeriodKey,
+  shiftMonth,
+  yearMonthsBetween,
+  resolveCashRadarWindow,
+} from './scope';

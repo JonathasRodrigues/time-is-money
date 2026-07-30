@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { updateThemePreferenceAction } from '@/server/actions';
+import { queryKeys } from '@/lib/api/query-keys';
+import { updateThemePreferenceAction } from '@/lib/api/mutations';
 import type { AppTheme } from '@/components/theme-provider';
 
 const OPTIONS: Array<{ value: AppTheme; label: string; icon: typeof Sun }> = [
@@ -29,6 +31,7 @@ export function ThemeToggle({
   persist?: boolean;
 }): React.ReactElement {
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const queryClient = useQueryClient();
   const [mounted, setMounted] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -40,7 +43,10 @@ export function ThemeToggle({
     setTheme(next);
     if (!persist) return;
     startTransition(() => {
-      void updateThemePreferenceAction(next);
+      void updateThemePreferenceAction(next).then(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap() });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.preferences() });
+      });
     });
   }
 

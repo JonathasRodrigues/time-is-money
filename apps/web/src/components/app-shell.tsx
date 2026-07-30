@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   ArrowLeftRight,
   Building2,
-  CreditCard,
   FolderTree,
+  HandCoins,
   Landmark,
   LayoutDashboard,
   PiggyBank,
@@ -20,10 +20,10 @@ import {
 import { JarvisDock } from '@/components/jarvis-dock';
 import { BrandLogo } from '@/components/brand-logo';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { NavigatingContent } from '@/components/navigating-content';
 import { NavigatingProvider } from '@/components/navigating';
-import { NavigationProgress } from '@/components/navigation-progress';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
+import { useScopePreference } from '@/components/scope-preference';
+import { pathUsesCenter, pathUsesPeriod } from '@/lib/scope-preference';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -51,19 +51,28 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 
-const primaryNav = [
+type PrimaryNavItem = {
+  href: string;
+  label: string;
+  icon: typeof Wallet;
+  /** Fluxo em /payments — itens irmãos, não aba da outra tela. */
+  paymentsFlow?: 'pay' | 'receive';
+};
+
+const primaryNav: PrimaryNavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/payments', label: 'Contas', icon: Wallet },
+  { href: '/payments', label: 'Contas a pagar', icon: Wallet, paymentsFlow: 'pay' },
+  { href: '/payments', label: 'Contas a receber', icon: HandCoins, paymentsFlow: 'receive' },
   { href: '/wealth', label: 'Patrimônio', icon: Landmark },
   { href: '/transactions', label: 'Extrato', icon: ArrowLeftRight },
   { href: '/financings', label: 'Financiamentos', icon: PiggyBank },
   { href: '/planning', label: 'Planejamento', icon: Target },
-] as const;
+];
 
 const cadastrosNav = [
+  { href: '/cadastros/accounts', label: 'Bancos e contas', icon: Landmark },
   { href: '/cadastros/categories', label: 'Categorias', icon: FolderTree },
   { href: '/cadastros/cost-centers', label: 'Centros de custo', icon: Building2 },
-  { href: '/cadastros/accounts', label: 'Bancos e contas', icon: CreditCard },
 ] as const;
 
 type SystemNavItem = {
@@ -83,8 +92,10 @@ function buildSystemNav(canManageMembers: boolean): SystemNavItem[] {
   return items;
 }
 
-function titleFromPath(pathname: string): string {
-  if (pathname.startsWith('/payments')) return 'Contas';
+function titleFromPath(pathname: string, flow?: string | null): string {
+  if (pathname.startsWith('/payments')) {
+    return flow === 'receive' ? 'Contas a receber' : 'Contas a pagar';
+  }
   if (pathname.startsWith('/wealth')) return 'Patrimônio';
   if (pathname.startsWith('/transactions')) return 'Extrato';
   if (pathname.startsWith('/financings')) return 'Financiamentos';
@@ -99,11 +110,63 @@ function titleFromPath(pathname: string): string {
   return 'Time is Money';
 }
 
-function isActivePath(pathname: string, href: string): boolean {
+function isActivePath(
+  pathname: string,
+  href: string,
+  opts?: { paymentsFlow?: 'pay' | 'receive'; currentPaymentsFlow?: 'pay' | 'receive' },
+): boolean {
   if (href === '/settings/preferences') {
     return pathname.startsWith('/settings/preferences') || pathname === '/settings';
   }
+  if (href === '/payments' && opts?.paymentsFlow) {
+    return (
+      (pathname === '/payments' || pathname.startsWith('/payments/')) &&
+      opts.currentPaymentsFlow === opts.paymentsFlow
+    );
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function paymentsNavHref(scopedHref: string, flow: 'pay' | 'receive'): string {
+  const [path, query = ''] = scopedHref.split('?');
+  const params = new URLSearchParams(query);
+  if (flow === 'receive') params.set('flow', 'receive');
+  else params.delete('flow');
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
+function PrimaryNavLinks(): React.ReactElement {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { navHref } = useScopePreference();
+  const currentPaymentsFlow: 'pay' | 'receive' =
+    searchParams.get('flow') === 'receive' ? 'receive' : 'pay';
+
+  return (
+    <SidebarMenu>
+      {primaryNav.map((item) => {
+        const scoped =
+          pathUsesPeriod(item.href) || pathUsesCenter(item.href) ? navHref(item.href) : item.href;
+        const href =
+          item.paymentsFlow != null ? paymentsNavHref(scoped, item.paymentsFlow) : scoped;
+        const active = isActivePath(pathname, item.href, {
+          paymentsFlow: item.paymentsFlow,
+          currentPaymentsFlow,
+        });
+        return (
+          <SidebarMenuItem key={`${item.href}:${item.paymentsFlow ?? 'default'}`}>
+            <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+              <Link href={href}>
+                <item.icon />
+                <span>{item.label}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
 }
 
 export function AppShell({
@@ -192,6 +255,9 @@ function AppShellFrame({
   systemNav: SystemNavItem[];
   initials: string;
 }): React.ReactElement {
+  const searchParams = useSearchParams();
+  const pageTitle = titleFromPath(pathname, searchParams.get('flow'));
+
   return (
     <>
       <Sidebar variant="inset" collapsible="icon">
@@ -220,22 +286,7 @@ function AppShellFrame({
           <SidebarGroup>
             <SidebarGroupLabel>Principal</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {primaryNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActivePath(pathname, item.href)}
-                      tooltip={item.label}
-                    >
-                      <Link href={item.href}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
+              <PrimaryNavLinks />
             </SidebarGroupContent>
           </SidebarGroup>
 
@@ -316,11 +367,12 @@ function AppShellFrame({
                 <Link href="/cadastros/categories">Categorias</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/cadastros/cost-centers">Centros de custo</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
                 <Link href="/cadastros/accounts">Bancos e contas</Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/cadastros/cost-centers">Centros de custo</Link>
+              </DropdownMenuItem>
+
               <DropdownMenuItem asChild>
                 <Link href="/settings/preferences">Preferências</Link>
               </DropdownMenuItem>
@@ -335,21 +387,19 @@ function AppShellFrame({
       </Sidebar>
 
       <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
-        <header className="relative sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
-          <NavigationProgress />
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-5" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{titleFromPath(pathname)}</p>
+            <p className="truncate text-sm font-medium">{pageTitle}</p>
           </div>
+          <JarvisDock ttsEnabled={ttsEnabled} />
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 md:px-8">
-          <NavigatingContent>{children}</NavigatingContent>
+          {children}
         </div>
       </SidebarInset>
-
-      <JarvisDock ttsEnabled={ttsEnabled} />
     </>
   );
 }

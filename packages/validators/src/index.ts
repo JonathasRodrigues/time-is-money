@@ -19,21 +19,41 @@ export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve 
 export const transactionTypeSchema = z.enum(['income', 'expense']);
 export const transactionStatusSchema = z.enum(['pending', 'paid']);
 
-export const createTransactionSchema = z.object({
-  householdId: z.string().uuid(),
-  costCenterId: z.string().uuid(),
-  categoryId: z.string().uuid(),
-  accountId: z.string().uuid(),
-  type: transactionTypeSchema,
-  status: transactionStatusSchema.optional(),
-  amountCents: moneyCentsSchema,
-  occurredOn: isoDateSchema,
-  /** Vencimento; se omitido, usa occurredOn. */
-  dueOn: isoDateSchema.optional(),
-  description: z.string().max(500).optional(),
-  notes: z.string().max(5000).optional(),
-  tags: z.array(z.string().max(40)).max(20).optional(),
-});
+export const paymentRailSchema = z.enum(['pix', 'debit', 'ted', 'boleto', 'cash', 'other']);
+
+export const accountKindSchema = z.enum(['cash', 'checking', 'savings', 'investment_pot']);
+
+export const cardModeSchema = z.enum(['credit', 'debit', 'both']);
+
+export const createTransactionSchema = z
+  .object({
+    householdId: z.string().uuid(),
+    costCenterId: z.string().uuid(),
+    categoryId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    creditCardId: z.string().uuid().nullable().optional(),
+    paymentRail: paymentRailSchema.nullable().optional(),
+    type: transactionTypeSchema,
+    status: transactionStatusSchema.optional(),
+    amountCents: moneyCentsSchema,
+    occurredOn: isoDateSchema,
+    /** Vencimento; se omitido, usa occurredOn. */
+    dueOn: isoDateSchema.optional(),
+    description: z.string().max(500).optional(),
+    notes: z.string().max(5000).optional(),
+    tags: z.array(z.string().max(40)).max(20).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const status = data.status ?? 'paid';
+    if (status === 'pending' && data.creditCardId) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Compra no cartão deve ser registrada como já paga — entra na fatura do ciclo, não em contas a pagar.',
+        path: ['creditCardId'],
+      });
+    }
+  });
 
 export const createPendingTransactionSchema = z
   .object({
@@ -42,6 +62,8 @@ export const createPendingTransactionSchema = z
     categoryId: z.string().uuid(),
     accountId: z.string().uuid(),
     type: transactionTypeSchema.default('expense'),
+    /** Meio previsto na quitação (PIX/débito/TED). */
+    paymentRail: paymentRailSchema.nullable().optional(),
     amountCents: optionalMoneyCentsSchema,
     dueOn: isoDateSchema,
     description: z.string().min(1).max(500),
@@ -66,6 +88,8 @@ export const createMonthlySeriesSchema = z.object({
   categoryId: z.string().uuid(),
   accountId: z.string().uuid(),
   type: transactionTypeSchema.default('expense'),
+  /** Meio previsto na quitação (PIX/débito/TED). */
+  paymentRail: paymentRailSchema.nullable().optional(),
   description: z.string().min(1).max(500),
   dueDay: z.number().int().min(1).max(28),
   defaultAmountCents: optionalMoneyCentsSchema,
@@ -85,6 +109,8 @@ export const updateTransactionSchema = z
     costCenterId: z.string().uuid(),
     categoryId: z.string().uuid(),
     accountId: z.string().uuid(),
+    creditCardId: z.string().uuid().nullable().optional(),
+    paymentRail: paymentRailSchema.nullable().optional(),
     type: transactionTypeSchema,
     status: transactionStatusSchema,
     amountCents: optionalMoneyCentsSchema,
@@ -107,6 +133,11 @@ export const payTransactionSchema = z.object({
   transactionId: z.string().uuid(),
   paidOn: isoDateSchema,
   amountCents: moneyCentsSchema.optional(),
+  accountId: z.string().uuid().optional(),
+  applyToBalance: z.boolean().optional(),
+  paymentRail: paymentRailSchema.nullable().optional(),
+  /** Pagar a obrigação com cartão de crédito (em vez da conta). */
+  creditCardId: z.string().uuid().optional(),
 });
 
 export const payTransactionsBulkSchema = z.object({
@@ -117,6 +148,10 @@ export const payTransactionsBulkSchema = z.object({
         transactionId: z.string().uuid(),
         amountCents: moneyCentsSchema.optional(),
         paidOn: isoDateSchema,
+        accountId: z.string().uuid().optional(),
+        applyToBalance: z.boolean().optional(),
+        paymentRail: paymentRailSchema.nullable().optional(),
+        creditCardId: z.string().uuid().optional(),
       }),
     )
     .min(1)
@@ -142,7 +177,7 @@ export const createAccountSchema = z.object({
   name: z.string().min(1).max(120),
   institutionId: z.string().uuid().nullable().optional(),
   parentAccountId: z.string().uuid().nullable().optional(),
-  kind: z.enum(['cash', 'checking', 'investment_pot']).default('checking'),
+  kind: accountKindSchema.default('checking'),
   balanceCents: z.number().int().min(0).default(0),
   yieldType: z.enum(['none', 'cdi', 'fixed_annual']).default('none'),
   yieldBps: z.number().int().min(0).max(100_000).nullable().optional(),
@@ -152,6 +187,55 @@ export const createInstitutionSchema = z.object({
   householdId: z.string().uuid(),
   name: z.string().min(1).max(120),
 });
+
+/** Cadastro guiado: banco + corrente (+ poupança e cartão opcionais). */
+export const setupBankSchema = z
+  .object({
+    householdId: z.string().uuid(),
+    catalogId: z.string().min(1).max(40),
+    customName: z.string().min(1).max(120).optional(),
+    costCenterId: z.string().uuid(),
+    accountName: z.string().min(1).max(120).default('Conta corrente'),
+    balanceCents: z.number().int().min(0).default(0),
+    includeSavings: z.boolean().default(false),
+    savingsName: z.string().min(1).max(120).optional(),
+    savingsBalanceCents: z.number().int().min(0).default(0),
+    includeCreditCard: z.boolean().default(true),
+    cardMode: cardModeSchema.default('both'),
+    cardName: z.string().min(1).max(120).optional(),
+    cardLastFour: z
+      .string()
+      .regex(/^\d{4}$/, 'Informe 4 dígitos')
+      .nullable()
+      .optional(),
+    creditLimitCents: z.number().int().min(0).default(0),
+    invoiceBalanceCents: z.number().int().min(0).default(0),
+    closingDay: z.number().int().min(1).max(28).default(1),
+    dueDay: z.number().int().min(1).max(28).default(10),
+  })
+  .superRefine((value, ctx) => {
+    if (value.catalogId === 'custom' && !value.customName?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe o nome do banco',
+        path: ['customName'],
+      });
+    }
+    if (value.includeSavings && !value.savingsName?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe o nome da poupança',
+        path: ['savingsName'],
+      });
+    }
+    if (value.includeCreditCard && !value.cardName?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe o nome do cartão',
+        path: ['cardName'],
+      });
+    }
+  });
 
 export const updateInstitutionSchema = z.object({
   householdId: z.string().uuid(),
@@ -172,10 +256,56 @@ export const updateAccountSchema = z.object({
   name: z.string().min(1).max(120),
   institutionId: z.string().uuid().nullable().optional(),
   parentAccountId: z.string().uuid().nullable().optional(),
-  kind: z.enum(['cash', 'checking', 'investment_pot']),
+  kind: accountKindSchema,
   balanceCents: z.number().int().min(0),
   yieldType: z.enum(['none', 'cdi', 'fixed_annual']),
   yieldBps: z.number().int().min(0).max(100_000).nullable().optional(),
+});
+
+export const createCreditCardSchema = z.object({
+  householdId: z.string().uuid(),
+  institutionId: z.string().uuid(),
+  paymentAccountId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  cardMode: cardModeSchema.default('credit'),
+  lastFour: z
+    .string()
+    .regex(/^\d{4}$/, 'Informe 4 dígitos')
+    .nullable()
+    .optional(),
+  creditLimitCents: z.number().int().min(0).default(0),
+  invoiceBalanceCents: z.number().int().min(0).default(0),
+  closingDay: z.number().int().min(1).max(28),
+  dueDay: z.number().int().min(1).max(28),
+});
+
+export const updateCreditCardSchema = z.object({
+  householdId: z.string().uuid(),
+  creditCardId: z.string().uuid(),
+  institutionId: z.string().uuid(),
+  paymentAccountId: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  cardMode: cardModeSchema,
+  lastFour: z
+    .string()
+    .regex(/^\d{4}$/, 'Informe 4 dígitos')
+    .nullable()
+    .optional(),
+  creditLimitCents: z.number().int().min(0),
+  invoiceBalanceCents: z.number().int().min(0),
+  closingDay: z.number().int().min(1).max(28),
+  dueDay: z.number().int().min(1).max(28),
+});
+
+export const payCreditCardInvoiceSchema = z.object({
+  householdId: z.string().uuid(),
+  creditCardId: z.string().uuid(),
+  amountCents: moneyCentsSchema,
+  paidOn: isoDateSchema,
+  /** Se omitido, usa a conta de pagamento padrão do cartão. */
+  paymentAccountId: z.string().uuid().optional(),
+  /** Meio usado para quitar a fatura (sai da conta). Default: pix. */
+  paymentRail: paymentRailSchema.optional(),
 });
 
 export const createTransferSchema = z
@@ -199,7 +329,12 @@ export const createTransferSchema = z
 
 export const amortizationSystemSchema = z.enum(['price', 'sac', 'fixed']);
 export const financingCategorySchema = z.enum(['real_estate', 'vehicle', 'personal', 'other']);
-export const planKindSchema = z.enum(['travel', 'financing_payoff', 'custom']);
+export const planKindSchema = z.enum([
+  'travel',
+  'financing_payoff',
+  'real_estate_amortization',
+  'custom',
+]);
 
 export const planItemInputSchema = z.object({
   label: z.string().min(1).max(120),
@@ -236,6 +371,13 @@ export const createPlanSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'Financiamento é obrigatório para planos de quitação',
+        path: ['financingId'],
+      });
+    }
+    if (data.kind === 'real_estate_amortization' && !data.financingId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Financiamento imobiliário é obrigatório para planos de amortização',
         path: ['financingId'],
       });
     }
@@ -388,6 +530,14 @@ export const notificationPrefsSchema = z.object({
 
 export const themePreferenceSchema = z.enum(['light', 'dark', 'system']);
 
+export const updatePreferencesSchema = notificationPrefsSchema.extend({
+  ttsEnabled: z.boolean().optional(),
+  theme: themePreferenceSchema,
+  incomeDay: z.number().int().min(1).max(28).nullable().optional(),
+  defaultCostCenterId: z.string().uuid().nullable().optional(),
+  defaultAccountId: z.string().uuid().nullable().optional(),
+});
+
 export const importColumnMappingSchema = z.object({
   occurredOn: z.string().min(1),
   amount: z.string().min(1),
@@ -457,10 +607,16 @@ export type CreateCostCenterInput = z.infer<typeof createCostCenterSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
 export type CreateInstitutionInput = z.infer<typeof createInstitutionSchema>;
+export type SetupBankInput = z.infer<typeof setupBankSchema>;
 export type UpdateInstitutionInput = z.infer<typeof updateInstitutionSchema>;
 export type UpdateAccountBalanceInput = z.infer<typeof updateAccountBalanceSchema>;
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
+export type CreateCreditCardInput = z.infer<typeof createCreditCardSchema>;
+export type UpdateCreditCardInput = z.infer<typeof updateCreditCardSchema>;
+export type PayCreditCardInvoiceInput = z.infer<typeof payCreditCardInvoiceSchema>;
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+export type PaymentRail = z.infer<typeof paymentRailSchema>;
+export type AccountKind = z.infer<typeof accountKindSchema>;
 export type CreateFinancingInput = z.infer<typeof createFinancingSchema>;
 export type PlanKind = z.infer<typeof planKindSchema>;
 export type FinancingCategory = z.infer<typeof financingCategorySchema>;
@@ -478,6 +634,7 @@ export type SoftDeleteFinancingInput = z.infer<typeof softDeleteFinancingSchema>
 export type SoftDeleteTransactionInput = z.infer<typeof softDeleteTransactionSchema>;
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 export type ThemePreference = z.infer<typeof themePreferenceSchema>;
+export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
 export type ImportPreviewRowUpdate = z.infer<typeof importPreviewRowUpdateSchema>;
 export type UpdateImportPreviewInput = z.infer<typeof updateImportPreviewSchema>;

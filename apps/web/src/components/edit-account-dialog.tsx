@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/ui/money-input';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { updateAccountAction } from '@/server/actions';
+import { updateAccountAction } from '@/lib/api/mutations';
 
 interface Option {
   id: string;
@@ -69,12 +69,11 @@ export function EditAccountDialog({
           </DialogDescription>
         </DialogHeader>
         <ActionForm
-          action={async (formData) => {
-            await updateAccountAction(formData);
-            setOpen(false);
-          }}
+          action={updateAccountAction}
           successMessage="Conta atualizada"
           loadingMessage="Salvando…"
+          invalidate="settings"
+          onSuccess={() => setOpen(false)}
           className="grid gap-3 sm:grid-cols-2"
         >
           <input type="hidden" name="accountId" value={account.id} />
@@ -96,6 +95,7 @@ export function EditAccountDialog({
               defaultValue={account.kind}
             >
               <option value="checking">Conta corrente</option>
+              <option value="savings">Poupança</option>
               <option value="cash">Dinheiro</option>
               <option value="investment_pot">Investimento / caixinha</option>
             </select>
