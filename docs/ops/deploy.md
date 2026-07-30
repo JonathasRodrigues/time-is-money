@@ -27,12 +27,15 @@ Cron (`/api/cron/due-reminders`) na mesma Vercel.
 DATABASE_URL='postgresql://...@...neon.tech/neondb?sslmode=require' pnpm db:migrate
 ```
 
-### Opção B — SQL Editor (banco **vazio**)
+### Opção B — SQL Editor (banco **vazio** ou **reconstruir do zero**)
 
 1. Neon Console → SQL Editor
-2. Colar `packages/db/drizzle/bootstrap-neon.sql`
-3. Run
+2. Colar o arquivo **inteiro** `packages/db/drizzle/rebuild-neon.sql` (apaga o schema e recria 0000→0014)
+3. Run uma vez
 4. **Não** rode `pnpm db:migrate` depois
+5. No app: login → onboarding (cria household + categorias)
+
+> Se o paste anterior parou no meio, a base fica inconsistente (ex.: falta `accounts.institution_id`). Use `rebuild-neon.sql`, não pedaços.
 
 ### Banco já existente (só faltam cartões / planning)
 
