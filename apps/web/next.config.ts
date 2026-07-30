@@ -16,6 +16,17 @@ const nextConfig: NextConfig = {
     '@tim/email',
     '@tim/crypto',
   ],
+  webpack: (config) => {
+    // Pacotes workspace usam imports ESM com sufixo .js apontando para .ts (NodeNext).
+    // Webpack/Next não resolve isso sem extensionAlias.
+    config.resolve = config.resolve ?? {};
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+    };
+    return config;
+  },
   async rewrites() {
     // Sem API_URL: Hono embutido em /api/v1 (produção Vercel).
     // Com API_URL: proxy para processo separado (dev local ou API standalone).
