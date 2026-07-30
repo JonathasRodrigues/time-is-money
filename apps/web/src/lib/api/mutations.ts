@@ -1,7 +1,13 @@
 /**
  * Client mutations via REST API (`@tim/api`). Drop-in replacements for former server actions.
  */
-import { parseBrlToCents, normalizeMoneyFormValue } from '@tim/domain';
+import {
+  dueOnForMonth,
+  normalizeMoneyFormValue,
+  parseBrlToCents,
+  shiftYearMonth,
+  yearMonthFromIso,
+} from '@tim/domain';
 import {
   planKindSchema,
   roleSchema,
@@ -557,53 +563,67 @@ export async function createReceivableAction(formData: FormData): Promise<void> 
   const status = statusRaw === 'pending' ? 'pending' : 'paid';
   const installmentsRaw = str(formData, 'installmentCount') || '1';
   const installmentCount = Math.max(1, Math.min(48, Number(installmentsRaw) || 1));
+  const monthlyCents = optionalMoneyCentsFromForm(formData, 'amount');
+  if (monthlyCents == null || monthlyCents <= 0) {
+    throw new Error('Informe o valor');
+  }
 
-  if (status === 'paid' || installmentCount === 1) {
-    if (status === 'pending' && installmentCount === 1) {
+  const base = {
+    costCenterId: str(formData, 'costCenterId'),
+    categoryId: str(formData, 'categoryId'),
+    accountId: str(formData, 'accountId'),
+    type: 'income' as const,
+    description: str(formData, 'description'),
+  };
+
+  if (installmentCount === 1) {
+    if (status === 'pending') {
       await api.transactions.createPending({
-        costCenterId: str(formData, 'costCenterId'),
-        categoryId: str(formData, 'categoryId'),
-        accountId: str(formData, 'accountId'),
-        type: 'income',
-        amountCents: optionalMoneyCentsFromForm(formData, 'amount'),
+        ...base,
+        amountCents: monthlyCents,
         dueOn: dateRaw,
-        description: str(formData, 'description'),
         installmentCount: 1,
       });
       return;
     }
-    const amountCents = moneyCentsFromForm(formData, 'amount');
-    if (amountCents <= 0) {
-      throw new Error('Informe o valor');
-    }
     await api.transactions.create({
-      costCenterId: str(formData, 'costCenterId'),
-      categoryId: str(formData, 'categoryId'),
-      accountId: str(formData, 'accountId'),
-      type: 'income',
+      ...base,
       status: 'paid',
-      amountCents,
+      amountCents: monthlyCents,
       occurredOn: dateRaw,
       dueOn: dateRaw,
-      description: str(formData, 'description') || undefined,
+      description: base.description || undefined,
     });
     return;
   }
 
-  const monthlyCents = optionalMoneyCentsFromForm(formData, 'amount');
-  if (monthlyCents == null || monthlyCents <= 0) {
-    throw new Error('Informe o valor mensal para gerar o ano');
+  if (status === 'pending') {
+    await api.transactions.createPending({
+      ...base,
+      amountCents: monthlyCents * installmentCount,
+      dueOn: dateRaw,
+      installmentCount,
+    });
+    return;
   }
-  await api.transactions.createPending({
-    costCenterId: str(formData, 'costCenterId'),
-    categoryId: str(formData, 'categoryId'),
-    accountId: str(formData, 'accountId'),
-    type: 'income',
-    amountCents: monthlyCents * installmentCount,
-    dueOn: dateRaw,
-    description: str(formData, 'description'),
-    installmentCount,
-  });
+
+  const startYm = yearMonthFromIso(dateRaw);
+  const dueDay = Math.min(28, Math.max(1, Number(dateRaw.slice(8, 10)) || 1));
+  for (let number = 1; number <= installmentCount; number += 1) {
+    const occurredOn = dueOnForMonth(shiftYearMonth(startYm, number - 1), dueDay);
+    const description =
+      installmentCount > 1
+        ? `${base.description} (${number}/${installmentCount})`
+        : base.description;
+    await api.transactions.create({
+      ...base,
+      status: 'paid',
+      amountCents: monthlyCents,
+      occurredOn,
+      dueOn: occurredOn,
+      description: description || undefined,
+    });
+  }
 }
 
 export async function createPendingTransactionAction(formData: FormData): Promise<void> {

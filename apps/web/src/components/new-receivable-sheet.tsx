@@ -75,15 +75,17 @@ export function NewReceivableSheet({
   const meta = KIND_META[kind];
 
   const monthlyCents = parseAmountToCents(monthlyAmount);
-  const effectiveMonths =
-    !alreadyReceived && repeatMonths ? Math.max(2, Math.min(48, monthCount)) : 1;
+  const effectiveMonths = repeatMonths ? Math.max(2, Math.min(48, monthCount)) : 1;
   const scheduleTotalCents =
     monthlyCents != null && effectiveMonths > 1 ? monthlyCents * effectiveMonths : null;
 
   const oneOffSuccess = useMemo(() => {
-    if (alreadyReceived) return 'Receita registrada';
-    if (effectiveMonths > 1) return `${effectiveMonths} receitas a receber criadas`;
-    return 'Receita a receber criada';
+    if (effectiveMonths > 1) {
+      return alreadyReceived
+        ? `${effectiveMonths} receitas registradas`
+        : `${effectiveMonths} receitas a receber criadas`;
+    }
+    return alreadyReceived ? 'Receita registrada' : 'Receita a receber criada';
   }, [alreadyReceived, effectiveMonths]);
 
   return (
@@ -151,16 +153,18 @@ export function NewReceivableSheet({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="rec-date">
-                  {alreadyReceived
-                    ? 'Data do recebimento'
-                    : effectiveMonths > 1
-                      ? 'Primeira data prevista'
+                  {effectiveMonths > 1
+                    ? alreadyReceived
+                      ? 'Data do primeiro recebimento'
+                      : 'Primeira data prevista'
+                    : alreadyReceived
+                      ? 'Data do recebimento'
                       : 'Data prevista'}
                 </Label>
                 <DateInput id="rec-date" name="date" required defaultValue={defaultDate} />
                 <p className="text-xs text-muted-foreground">
                   {effectiveMonths > 1
-                    ? 'As demais datas avançam um mês a cada parcela.'
+                    ? 'As demais datas avançam um mês a cada parcela (ex.: 3, 6 ou 12 meses).'
                     : 'Pode ser uma data passada para lançamento retroativo.'}
                 </p>
               </div>
@@ -179,7 +183,8 @@ export function NewReceivableSheet({
                 />
                 {scheduleTotalCents != null ? (
                   <p className="text-xs text-muted-foreground">
-                    Total planejado: {formatBrl(scheduleTotalCents)} ({effectiveMonths}×)
+                    Total {alreadyReceived ? 'lançado' : 'planejado'}:{' '}
+                    {formatBrl(scheduleTotalCents)} ({effectiveMonths}×)
                   </p>
                 ) : null}
               </div>
@@ -188,42 +193,39 @@ export function NewReceivableSheet({
                   type="checkbox"
                   className="size-4 rounded border border-input accent-primary"
                   checked={alreadyReceived}
-                  onChange={(event) => {
-                    setAlreadyReceived(event.target.checked);
-                    if (event.target.checked) setRepeatMonths(false);
-                  }}
+                  onChange={(event) => setAlreadyReceived(event.target.checked)}
                 />
                 Já recebi
               </label>
-              {!alreadyReceived ? (
-                <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="size-4 rounded border border-input accent-primary"
-                      checked={repeatMonths}
-                      onChange={(event) => setRepeatMonths(event.target.checked)}
+              <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border border-input accent-primary"
+                    checked={repeatMonths}
+                    onChange={(event) => setRepeatMonths(event.target.checked)}
+                  />
+                  Gerar vários meses (parcial ou ano todo)
+                </label>
+                {repeatMonths ? (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="rec-months">Quantidade de meses</Label>
+                    <Input
+                      id="rec-months"
+                      type="number"
+                      min={2}
+                      max={48}
+                      value={monthCount}
+                      onChange={(event) => setMonthCount(Number(event.target.value) || 12)}
                     />
-                    Gerar vários meses (ex.: o ano todo)
-                  </label>
-                  {repeatMonths ? (
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="rec-months">Quantidade de meses</Label>
-                      <Input
-                        id="rec-months"
-                        type="number"
-                        min={2}
-                        max={48}
-                        value={monthCount}
-                        onChange={(event) => setMonthCount(Number(event.target.value) || 12)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Cria {effectiveMonths} itens em Contas a receber com o mesmo valor.
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+                    <p className="text-xs text-muted-foreground">
+                      {alreadyReceived
+                        ? `Cria ${effectiveMonths} lançamentos pagos no extrato (mesmo valor).`
+                        : `Cria ${effectiveMonths} itens em Contas a receber com o mesmo valor.`}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
               <CenterCategoryAccountFields
                 prefix="rec"
                 centers={centers}
