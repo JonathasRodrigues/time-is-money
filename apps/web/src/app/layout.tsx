@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Analytics } from '@vercel/analytics/next';
 import { IBM_Plex_Sans } from 'next/font/google';
 import { shouldUseClerk } from '@/components/auth-shell';
+import { QueryProvider } from '@/components/query-provider';
 import { RegisterServiceWorker } from '@/components/register-sw';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
@@ -50,12 +51,14 @@ export default async function RootLayout({
   const useClerk = shouldUseClerk();
 
   const inner = (
-    <TooltipProvider>
-      <RegisterServiceWorker />
-      {children}
-      <Toaster />
-      <Analytics />
-    </TooltipProvider>
+    <QueryProvider>
+      <TooltipProvider>
+        <RegisterServiceWorker />
+        {children}
+        <Toaster />
+        <Analytics />
+      </TooltipProvider>
+    </QueryProvider>
   );
 
   return (

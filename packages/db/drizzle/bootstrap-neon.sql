@@ -298,7 +298,11 @@ ALTER TABLE "account_transfers" ADD CONSTRAINT "account_transfers_to_account_id_
 CREATE INDEX IF NOT EXISTS "account_transfers_household_occurred_idx" ON "account_transfers" ("household_id","occurred_on");
 
 -- ===== 0006_household_invitations.sql =====
-CREATE TYPE "public"."invitation_status" AS ENUM('pending', 'accepted', 'revoked');
+DO $$ BEGIN
+  CREATE TYPE "public"."invitation_status" AS ENUM('pending', 'accepted', 'revoked');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 CREATE TABLE IF NOT EXISTS "household_invitations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"household_id" uuid NOT NULL,
@@ -311,7 +315,10 @@ CREATE TABLE IF NOT EXISTS "household_invitations" (
 	"accepted_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
-ALTER TABLE "household_invitations" ADD CONSTRAINT "household_invitations_household_id_households_id_fk" FOREIGN KEY ("household_id") REFERENCES "public"."households"("id") ON DELETE cascade ON UPDATE no action;
+DO $$ BEGIN
+  ALTER TABLE "household_invitations" ADD CONSTRAINT "household_invitations_household_id_households_id_fk" FOREIGN KEY ("household_id") REFERENCES "public"."households"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS "household_invitations_token_hash_uidx" ON "household_invitations" ("token_hash");
 CREATE INDEX IF NOT EXISTS "household_invitations_household_status_idx" ON "household_invitations" ("household_id","status");
 

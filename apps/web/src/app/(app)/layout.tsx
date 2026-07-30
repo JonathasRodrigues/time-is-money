@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 import { isDemoMode, isMockApiMode } from '@tim/mocks';
 import { AppLayoutClient } from '@/components/app-layout-client';
 import { shouldUseClerk } from '@/components/auth-shell';
-import { QueryProvider } from '@/components/query-provider';
 import { getAuthSession } from '@/server/db';
 
 export default async function AppLayout({
@@ -25,9 +24,5 @@ export default async function AppLayout({
     redirect('/onboarding');
   }
 
-  return (
-    <QueryProvider>
-      <AppLayoutClient>{children}</AppLayoutClient>
-    </QueryProvider>
-  );
+  return <AppLayoutClient>{children}</AppLayoutClient>;
 }
