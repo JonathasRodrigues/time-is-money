@@ -550,6 +550,62 @@ export async function createPayableExpenseAction(formData: FormData): Promise<vo
   });
 }
 
+/** Receita avulsa, a receber ou repetida por N meses (mesmo valor mensal). */
+export async function createReceivableAction(formData: FormData): Promise<void> {
+  const dateRaw = str(formData, 'dueOn') || str(formData, 'date');
+  const statusRaw = str(formData, 'status').trim();
+  const status = statusRaw === 'pending' ? 'pending' : 'paid';
+  const installmentsRaw = str(formData, 'installmentCount') || '1';
+  const installmentCount = Math.max(1, Math.min(48, Number(installmentsRaw) || 1));
+
+  if (status === 'paid' || installmentCount === 1) {
+    if (status === 'pending' && installmentCount === 1) {
+      await api.transactions.createPending({
+        costCenterId: str(formData, 'costCenterId'),
+        categoryId: str(formData, 'categoryId'),
+        accountId: str(formData, 'accountId'),
+        type: 'income',
+        amountCents: optionalMoneyCentsFromForm(formData, 'amount'),
+        dueOn: dateRaw,
+        description: str(formData, 'description'),
+        installmentCount: 1,
+      });
+      return;
+    }
+    const amountCents = moneyCentsFromForm(formData, 'amount');
+    if (amountCents <= 0) {
+      throw new Error('Informe o valor');
+    }
+    await api.transactions.create({
+      costCenterId: str(formData, 'costCenterId'),
+      categoryId: str(formData, 'categoryId'),
+      accountId: str(formData, 'accountId'),
+      type: 'income',
+      status: 'paid',
+      amountCents,
+      occurredOn: dateRaw,
+      dueOn: dateRaw,
+      description: str(formData, 'description') || undefined,
+    });
+    return;
+  }
+
+  const monthlyCents = optionalMoneyCentsFromForm(formData, 'amount');
+  if (monthlyCents == null || monthlyCents <= 0) {
+    throw new Error('Informe o valor mensal para gerar o ano');
+  }
+  await api.transactions.createPending({
+    costCenterId: str(formData, 'costCenterId'),
+    categoryId: str(formData, 'categoryId'),
+    accountId: str(formData, 'accountId'),
+    type: 'income',
+    amountCents: monthlyCents * installmentCount,
+    dueOn: dateRaw,
+    description: str(formData, 'description'),
+    installmentCount,
+  });
+}
+
 export async function createPendingTransactionAction(formData: FormData): Promise<void> {
   const installmentsRaw = str(formData, 'installmentCount') || '1';
   const installmentCount = Math.max(1, Math.min(48, Number(installmentsRaw) || 1));
@@ -568,6 +624,9 @@ export async function createPendingTransactionAction(formData: FormData): Promis
 
 export async function createMonthlySeriesAction(formData: FormData): Promise<void> {
   const amountRaw = str(formData, 'defaultAmount');
+  const materializeRaw = str(formData, 'materializeMonths').trim();
+  const materializeMonths =
+    materializeRaw === '' ? undefined : Math.max(1, Math.min(24, Number(materializeRaw) || 2));
   await api.transactions.createMonthlySeries({
     costCenterId: str(formData, 'costCenterId'),
     categoryId: str(formData, 'categoryId'),
@@ -577,6 +636,7 @@ export async function createMonthlySeriesAction(formData: FormData): Promise<voi
     description: str(formData, 'description'),
     dueDay: Number(formData.get('dueDay')),
     defaultAmountCents: amountRaw === '' ? null : Math.round(Number(amountRaw) * 100),
+    materializeMonths,
   });
 }
 

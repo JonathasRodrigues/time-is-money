@@ -18,11 +18,14 @@ Guia operacional para IMEX.
 **Flat:** baixe template CSV (`downloadTemplateAction`) ou use colunas:
 
 ```
-data;valor;tipo;descricao;categoria;centro_custo;conta
-2026-07-01;100,00;despesa;Supermercado;Supermercado;Pessoa Física;Carteira / Dinheiro
+data;valor;tipo;situacao;descricao;categoria;centro_custo;conta
+2026-07-01;100,00;despesa;pago;Supermercado;Supermercado;Pessoa Física;Carteira / Dinheiro
+2026-01-05;5000,00;receita;a receber;Salário;Salário;Pessoa Física;Nubank PF
 ```
 
-**Contas:** XLSX com abas `Janeiro`…`Dezembro` (ex.: `Contas - 2024.xlsx`). Ano no nome do arquivo ou no campo da UI.
+**Contas:** XLSX com abas `Janeiro`…`Dezembro` (ex.: `Contas - 2024.xlsx`). Ano no nome do arquivo ou no campo da UI. Sempre despesa **paga** (extrato).
+
+**Receitas do ano:** use flat CSV com `tipo=receita` e `situacao=a receber` (uma linha por mês), ou em Contas a receber → Adicionar → “Gerar vários meses” / receita mensal com “Materializar 12 meses”.
 
 ### Passo 2 — Upload
 
@@ -54,6 +57,7 @@ data;valor;tipo;descricao;categoria;centro_custo;conta
 | Data                   | `YYYY-MM-DD` ou `DD/MM/YYYY` (flat); Contas usa dia 10 |
 | Valor                  | BRL (`100,00`) ou US Contas (`3,200.00`)               |
 | Tipo                   | `receita`/`despesa` ou sempre despesa (Contas)         |
+| Situação               | `pago`/`recebido` ou `a receber`/`a pagar`/`pending`   |
 | Categoria/Centro/Conta | Match fuzzy por nome ou alias                          |
 
 ## Dedup

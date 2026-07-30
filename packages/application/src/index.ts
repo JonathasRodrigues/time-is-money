@@ -468,8 +468,10 @@ export async function createMonthlySeries(ctx: AppContext, raw: CreateMonthlySer
 
   const now = new Date();
   const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  await ensureSeriesInstance(ctx, series.id, currentMonth);
-  await ensureSeriesInstance(ctx, series.id, shiftYearMonth(currentMonth, 1));
+  const materializeCount = input.materializeMonths ?? 2;
+  for (let offset = 0; offset < materializeCount; offset += 1) {
+    await ensureSeriesInstance(ctx, series.id, shiftYearMonth(currentMonth, offset));
+  }
 
   await writeAudit(ctx, {
     action: 'create',
@@ -479,6 +481,7 @@ export async function createMonthlySeries(ctx: AppContext, raw: CreateMonthlySer
       dueDay: input.dueDay,
       defaultAmountCents: input.defaultAmountCents ?? null,
       kind: 'fixed',
+      materializeMonths: materializeCount,
     },
   });
 

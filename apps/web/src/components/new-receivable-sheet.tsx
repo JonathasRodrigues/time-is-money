@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { parseBrlToCents } from '@tim/domain';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { nativeSelectClassName } from '@/components/page-header';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ActionForm } from '@/components/action-form';
-import { createMonthlySeriesAction, createTransactionAction } from '@/lib/api/mutations';
+import { createMonthlySeriesAction, createReceivableAction } from '@/lib/api/mutations';
 
 type ReceivableFormKind = 'one_off' | 'monthly';
 
@@ -29,7 +30,7 @@ const KIND_META: Record<
 > = {
   one_off: {
     title: 'Receita avulsa',
-    description: 'Salário atrasado, 13º, freela… Pode ser de hoje ou de uma data passada.',
+    description: 'Salário atrasado, 13º, freela… Ou gere vários meses de uma vez.',
     submit: 'Registrar receita',
   },
   monthly: {
@@ -38,6 +39,19 @@ const KIND_META: Record<
     submit: 'Criar receita fixa',
   },
 };
+
+function parseAmountToCents(raw: string): number | null {
+  const cents = parseBrlToCents(raw);
+  if (cents == null || cents <= 0) return null;
+  return cents;
+}
+
+function formatBrl(cents: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(cents / 100);
+}
 
 export function NewReceivableSheet({
   centers,
@@ -54,7 +68,23 @@ export function NewReceivableSheet({
 }): React.ReactElement {
   const [kind, setKind] = useState<ReceivableFormKind>('one_off');
   const [alreadyReceived, setAlreadyReceived] = useState(true);
+  const [repeatMonths, setRepeatMonths] = useState(false);
+  const [monthCount, setMonthCount] = useState(12);
+  const [monthlyAmount, setMonthlyAmount] = useState('');
+  const [materializeYear, setMaterializeYear] = useState(true);
   const meta = KIND_META[kind];
+
+  const monthlyCents = parseAmountToCents(monthlyAmount);
+  const effectiveMonths =
+    !alreadyReceived && repeatMonths ? Math.max(2, Math.min(48, monthCount)) : 1;
+  const scheduleTotalCents =
+    monthlyCents != null && effectiveMonths > 1 ? monthlyCents * effectiveMonths : null;
+
+  const oneOffSuccess = useMemo(() => {
+    if (alreadyReceived) return 'Receita registrada';
+    if (effectiveMonths > 1) return `${effectiveMonths} receitas a receber criadas`;
+    return 'Receita a receber criada';
+  }, [alreadyReceived, effectiveMonths]);
 
   return (
     <Sheet>
@@ -67,7 +97,9 @@ export function NewReceivableSheet({
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Adicionar receita</SheetTitle>
-          <SheetDescription>Avulsa (inclusive retroativa) ou fixa mensal.</SheetDescription>
+          <SheetDescription>
+            Avulsa, em massa (vários meses) ou fixa mensal. Planilha anual em Importar/Exportar.
+          </SheetDescription>
         </SheetHeader>
 
         <div className="grid gap-4">
@@ -86,7 +118,7 @@ export function NewReceivableSheet({
             aria-label="Tipo de receita"
           >
             <ToggleGroupItem value="one_off" className="flex-1 px-2 text-xs sm:text-sm">
-              Avulsa
+              Avulsa / em massa
             </ToggleGroupItem>
             <ToggleGroupItem value="monthly" className="flex-1 px-2 text-xs sm:text-sm">
               Mensal
@@ -100,13 +132,14 @@ export function NewReceivableSheet({
 
           {kind === 'one_off' ? (
             <ActionForm
-              action={createTransactionAction}
+              action={createReceivableAction}
               loadingMessage="Registrando receita…"
-              successMessage={alreadyReceived ? 'Receita registrada' : 'Receita a receber criada'}
+              successMessage={oneOffSuccess}
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="income" />
               <input type="hidden" name="status" value={alreadyReceived ? 'paid' : 'pending'} />
+              <input type="hidden" name="installmentCount" value={String(effectiveMonths)} />
               <div className="grid gap-1.5">
                 <Label htmlFor="rec-desc">Descrição</Label>
                 <Input
@@ -118,32 +151,79 @@ export function NewReceivableSheet({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="rec-date">
-                  {alreadyReceived ? 'Data do recebimento' : 'Data prevista'}
+                  {alreadyReceived
+                    ? 'Data do recebimento'
+                    : effectiveMonths > 1
+                      ? 'Primeira data prevista'
+                      : 'Data prevista'}
                 </Label>
                 <DateInput id="rec-date" name="date" required defaultValue={defaultDate} />
                 <p className="text-xs text-muted-foreground">
-                  Pode ser uma data passada para lançamento retroativo.
+                  {effectiveMonths > 1
+                    ? 'As demais datas avançam um mês a cada parcela.'
+                    : 'Pode ser uma data passada para lançamento retroativo.'}
                 </p>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="rec-amount">Valor (R$)</Label>
+                <Label htmlFor="rec-amount">
+                  {effectiveMonths > 1 ? 'Valor por mês (R$)' : 'Valor (R$)'}
+                </Label>
                 <MoneyInput
                   id="rec-amount"
                   name="amount"
                   min="0.01"
                   required
                   placeholder="Ex.: 5000,00"
+                  value={monthlyAmount}
+                  onValueChange={setMonthlyAmount}
                 />
+                {scheduleTotalCents != null ? (
+                  <p className="text-xs text-muted-foreground">
+                    Total planejado: {formatBrl(scheduleTotalCents)} ({effectiveMonths}×)
+                  </p>
+                ) : null}
               </div>
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   className="size-4 rounded border border-input accent-primary"
                   checked={alreadyReceived}
-                  onChange={(event) => setAlreadyReceived(event.target.checked)}
+                  onChange={(event) => {
+                    setAlreadyReceived(event.target.checked);
+                    if (event.target.checked) setRepeatMonths(false);
+                  }}
                 />
                 Já recebi
               </label>
+              {!alreadyReceived ? (
+                <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border border-input accent-primary"
+                      checked={repeatMonths}
+                      onChange={(event) => setRepeatMonths(event.target.checked)}
+                    />
+                    Gerar vários meses (ex.: o ano todo)
+                  </label>
+                  {repeatMonths ? (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="rec-months">Quantidade de meses</Label>
+                      <Input
+                        id="rec-months"
+                        type="number"
+                        min={2}
+                        max={48}
+                        value={monthCount}
+                        onChange={(event) => setMonthCount(Number(event.target.value) || 12)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Cria {effectiveMonths} itens em Contas a receber com o mesmo valor.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <CenterCategoryAccountFields
                 prefix="rec"
                 centers={centers}
@@ -151,7 +231,9 @@ export function NewReceivableSheet({
                 accounts={accounts}
                 defaultCostCenterId={defaultCostCenterId}
               />
-              <SubmitButton pendingLabel="Salvando…">{meta.submit}</SubmitButton>
+              <SubmitButton pendingLabel="Salvando…">
+                {effectiveMonths > 1 ? `Criar ${effectiveMonths} receitas` : meta.submit}
+              </SubmitButton>
             </ActionForm>
           ) : null}
 
@@ -159,10 +241,15 @@ export function NewReceivableSheet({
             <ActionForm
               action={createMonthlySeriesAction}
               loadingMessage="Criando receita…"
-              successMessage="Receita fixa criada"
+              successMessage={
+                materializeYear
+                  ? 'Receita fixa criada (12 meses materializados)'
+                  : 'Receita fixa criada'
+              }
               className="grid gap-3"
             >
               <input type="hidden" name="type" value="income" />
+              <input type="hidden" name="materializeMonths" value={materializeYear ? '12' : '2'} />
               <div className="grid gap-1.5">
                 <Label htmlFor="inc-desc">Descrição</Label>
                 <Input
@@ -195,6 +282,19 @@ export function NewReceivableSheet({
                   />
                 </div>
               </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border border-input accent-primary"
+                  checked={materializeYear}
+                  onChange={(event) => setMaterializeYear(event.target.checked)}
+                />
+                Materializar 12 meses a partir de agora
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Sem isso, só o mês atual e o próximo entram na fila; o restante aparece ao navegar o
+                calendário.
+              </p>
               <CenterCategoryAccountFields
                 prefix="inc"
                 centers={centers}

@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
+export const importSettlementSchema = z.enum(['paid', 'pending']);
+
 export const parsedImportRowSchema = z.object({
   occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amountCents: z.number().int().positive(),
   type: z.enum(['income', 'expense']),
+  /** paid = extrato; pending = a pagar/receber (não mexe no saldo). */
+  settlement: importSettlementSchema.default('paid'),
   description: z.string().optional(),
   category: z.string().optional(),
   costCenter: z.string().optional(),

@@ -10,6 +10,7 @@ export const TEMPLATE_HEADERS = [
   'data',
   'valor',
   'tipo',
+  'situacao',
   'descricao',
   'categoria',
   'centro_custo',
@@ -58,6 +59,27 @@ function normalizeType(raw: string | undefined, amountRaw: string): 'income' | '
   }
   if (amountRaw.trim().startsWith('-')) return 'expense';
   return 'expense';
+}
+
+/** pago / a receber / a pagar → paid | pending. Default paid (extrato). */
+export function normalizeSettlement(raw: string | undefined): 'paid' | 'pending' {
+  if (!raw?.trim()) return 'paid';
+  const n = raw.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+  if (
+    n.includes('receber') ||
+    n.includes('pagar') ||
+    n.includes('pendente') ||
+    n === 'pending' ||
+    n === 'aberto' ||
+    n === 'a receber' ||
+    n === 'a pagar'
+  ) {
+    return 'pending';
+  }
+  if (n.includes('pago') || n.includes('recebido') || n === 'paid' || n === 'quitado') {
+    return 'paid';
+  }
+  return 'paid';
 }
 
 function normalizeDate(raw: string): string {
@@ -116,6 +138,7 @@ export function autoMapColumns(headers: string[]): ImportColumnMapping {
     occurredOn: find('data', 'date', 'occurred') ?? headers[0] ?? 'data',
     amount: find('valor', 'amount', 'value') ?? headers[1] ?? 'valor',
     type: find('tipo', 'type'),
+    settlement: find('situacao', 'situação', 'status', 'settlement'),
     description: find('descricao', 'descrição', 'description', 'memo'),
     category: find('categoria', 'category'),
     costCenter: find('centro', 'cost'),
@@ -132,10 +155,12 @@ export function mapRows(
     try {
       const amountRaw = row[mapping.amount] ?? '';
       const typeRaw = mapping.type ? row[mapping.type] : undefined;
+      const settlementRaw = mapping.settlement ? row[mapping.settlement] : undefined;
       const parsed = parsedImportRowSchema.parse({
         occurredOn: normalizeDate(row[mapping.occurredOn] ?? ''),
         amountCents: parseAmountToCents(amountRaw),
         type: normalizeType(typeRaw, amountRaw),
+        settlement: normalizeSettlement(settlementRaw),
         description: mapping.description ? row[mapping.description] || undefined : undefined,
         category: mapping.category ? row[mapping.category] || undefined : undefined,
         costCenter: mapping.costCenter ? row[mapping.costCenter] || undefined : undefined,
@@ -154,9 +179,10 @@ export function mapRows(
 
 export function buildTemplateCsv(): string {
   const header = TEMPLATE_HEADERS.join(';');
-  const sample =
-    '2026-07-01;100,00;despesa;Supermercado;Supermercado;Pessoa Física;Carteira / Dinheiro';
-  return `${header}\n${sample}\n`;
+  const expense =
+    '2026-07-01;100,00;despesa;pago;Supermercado;Supermercado;Pessoa Física;Carteira / Dinheiro';
+  const income = '2026-01-05;5000,00;receita;a receber;Salário;Salário;Pessoa Física;Nubank PF';
+  return `${header}\n${expense}\n${income}\n`;
 }
 
 export function buildExportCsv(
@@ -178,6 +204,7 @@ export function buildExportCsv(
         row.occurredOn,
         amount,
         row.type === 'income' ? 'receita' : 'despesa',
+        'pago',
         row.description ?? '',
         row.category ?? '',
         row.costCenter ?? '',
@@ -195,6 +222,7 @@ export function buildExportXlsx(rows: Parameters<typeof buildExportCsv>[0]): Arr
       row.occurredOn,
       (row.amountCents / 100).toFixed(2).replace('.', ','),
       row.type === 'income' ? 'receita' : 'despesa',
+      'pago',
       row.description ?? '',
       row.category ?? '',
       row.costCenter ?? '',

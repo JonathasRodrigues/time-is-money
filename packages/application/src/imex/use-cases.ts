@@ -52,6 +52,7 @@ export type ImportPreviewRowDto = {
   occurredOn?: string;
   amountCents?: number;
   type?: 'income' | 'expense';
+  settlement?: 'paid' | 'pending';
   description?: string;
   category?: string;
   costCenter?: string;
@@ -98,6 +99,7 @@ function dtoFromDbRow(row: {
     occurredOn: payload.occurredOn,
     amountCents: payload.amountCents,
     type: payload.type,
+    settlement: payload.settlement ?? 'paid',
     description: payload.description,
     category: payload.category,
     costCenter: payload.costCenter,
@@ -434,6 +436,7 @@ export async function updateImportPreview(
       occurredOn: row.occurredOn,
       amountCents: row.amountCents,
       type: row.type,
+      settlement: row.settlement ?? 'paid',
       description: row.description ?? undefined,
       category: row.category ?? undefined,
       costCenter: row.costCenter ?? undefined,
@@ -482,6 +485,7 @@ export async function commitImport(
     categoryId: string;
     accountId: string;
     type: 'income' | 'expense';
+    settlement: 'paid' | 'pending';
     amountCents: number;
     occurredOn: string;
     description?: string;
@@ -536,6 +540,7 @@ export async function commitImport(
       categoryId,
       accountId,
       type: payload.type,
+      settlement: payload.settlement === 'pending' ? 'pending' : 'paid',
       amountCents: payload.amountCents,
       occurredOn: payload.occurredOn,
       description: payload.description,
@@ -552,32 +557,36 @@ export async function commitImport(
   for (let i = 0; i < toInsert.length; i += IMPORT_INSERT_CHUNK) {
     const chunk = toInsert.slice(i, i + IMPORT_INSERT_CHUNK);
     await ctx.db.insert(transactions).values(
-      chunk.map((row) => ({
-        householdId: session.householdId,
-        costCenterId: row.costCenterId,
-        categoryId: row.categoryId,
-        accountId: row.accountId,
-        type: row.type,
-        status: 'paid' as const,
-        amountCents: row.amountCents,
-        occurredOn: row.occurredOn,
-        dueOn: row.occurredOn,
-        paidOn: row.occurredOn,
-        description: row.description,
-        tags: row.tags ?? [],
-        source: 'import',
-        duplicateHash: importDuplicateHash({
-          occurredOn: row.occurredOn,
-          amountCents: row.amountCents,
-          description: row.description,
+      chunk.map((row) => {
+        const isPaid = row.settlement === 'paid';
+        return {
+          householdId: session.householdId,
+          costCenterId: row.costCenterId,
+          categoryId: row.categoryId,
           accountId: row.accountId,
-        }),
-        createdBy: session.userId,
-      })),
+          type: row.type,
+          status: isPaid ? ('paid' as const) : ('pending' as const),
+          amountCents: row.amountCents,
+          occurredOn: row.occurredOn,
+          dueOn: row.occurredOn,
+          paidOn: isPaid ? row.occurredOn : null,
+          description: row.description,
+          tags: row.tags ?? [],
+          source: 'import',
+          duplicateHash: importDuplicateHash({
+            occurredOn: row.occurredOn,
+            amountCents: row.amountCents,
+            description: row.description,
+            accountId: row.accountId,
+          }),
+          createdBy: session.userId,
+        };
+      }),
     );
 
     if (movesBalance) {
       for (const row of chunk) {
+        if (row.settlement !== 'paid') continue;
         const delta = row.type === 'expense' ? -row.amountCents : row.amountCents;
         balanceDeltaByAccount.set(
           row.accountId,

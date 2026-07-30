@@ -8,6 +8,7 @@ import {
   mapContasCategory,
   mapPaymentMethodToAccount,
   mapRows,
+  normalizeSettlement,
   parseContasAmountToCents,
   parseContasMonthlyWorkbook,
 } from './index';
@@ -35,6 +36,35 @@ describe('imex', () => {
     expect(results[0]?.status).toBe('ok');
     expect(results[0]?.data?.amountCents).toBe(10000);
     expect(results[0]?.data?.occurredOn).toBe('2026-07-01');
+    expect(results[0]?.data?.settlement).toBe('paid');
+  });
+
+  it('maps receita a receber via situacao', () => {
+    const headers = ['Data', 'Valor', 'Tipo', 'Situacao', 'Descricao'];
+    const mapping = autoMapColumns(headers);
+    const results = mapRows(
+      [
+        {
+          Data: '05/01/2026',
+          Valor: '5.000,00',
+          Tipo: 'receita',
+          Situacao: 'a receber',
+          Descricao: 'Salário',
+        },
+      ],
+      mapping,
+    );
+    expect(results[0]?.status).toBe('ok');
+    expect(results[0]?.data?.type).toBe('income');
+    expect(results[0]?.data?.settlement).toBe('pending');
+    expect(results[0]?.data?.amountCents).toBe(500000);
+  });
+
+  it('normalizes settlement labels', () => {
+    expect(normalizeSettlement('pago')).toBe('paid');
+    expect(normalizeSettlement('a receber')).toBe('pending');
+    expect(normalizeSettlement('pending')).toBe('pending');
+    expect(normalizeSettlement(undefined)).toBe('paid');
   });
 });
 

@@ -132,6 +132,7 @@ export function ImportExportClient(): React.ReactElement {
           occurredOn: row.occurredOn,
           amountCents: row.amountCents,
           type: row.type,
+          settlement: row.settlement ?? 'paid',
           description: row.description ?? null,
           category: row.category ?? null,
           costCenter: row.costCenter ?? null,
@@ -293,7 +294,8 @@ export function ImportExportClient(): React.ReactElement {
               Importar
             </CardTitle>
             <CardDescription>
-              Template flat ou planilha Contas (abas mensais). Revise antes de gravar.
+              Extrato (pago) ou contas a receber/pagar: use a coluna situacao (pago / a receber).
+              Contas mensal = despesas do extrato. Revise antes de gravar.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-5">
@@ -455,6 +457,7 @@ export function ImportExportClient(): React.ReactElement {
                     <TableHead className="w-28">Data</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead className="w-28">Valor</TableHead>
+                    <TableHead className="w-32">Situação</TableHead>
                     <TableHead className="min-w-36">Categoria</TableHead>
                     <TableHead className="min-w-36">Conta</TableHead>
                     <TableHead className="min-w-36">Centro</TableHead>
@@ -508,6 +511,25 @@ export function ImportExportClient(): React.ReactElement {
                             if (cents != null) patchRow(row.id, { amountCents: cents });
                           }}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <select
+                          className={nativeSelectClassName}
+                          value={row.settlement ?? 'paid'}
+                          onChange={(e) =>
+                            patchRow(row.id, {
+                              settlement: e.target.value === 'pending' ? 'pending' : 'paid',
+                            })
+                          }
+                          aria-label={`Situação linha ${row.rowNumber}`}
+                        >
+                          <option value="paid">
+                            {row.type === 'income' ? 'Recebido' : 'Pago'}
+                          </option>
+                          <option value="pending">
+                            {row.type === 'income' ? 'A receber' : 'A pagar'}
+                          </option>
+                        </select>
                       </TableCell>
                       <TableCell>
                         <select

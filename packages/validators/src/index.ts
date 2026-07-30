@@ -93,6 +93,11 @@ export const createMonthlySeriesSchema = z.object({
   description: z.string().min(1).max(500),
   dueDay: z.number().int().min(1).max(28),
   defaultAmountCents: optionalMoneyCentsSchema,
+  /**
+   * Quantos meses materializar a partir do mês atual (inclui o atual).
+   * Default 2 (atual + próximo). Use 12 para cobrir ~um ano.
+   */
+  materializeMonths: z.number().int().min(1).max(24).optional(),
 });
 
 export const updatePendingAmountSchema = z.object({
@@ -542,6 +547,7 @@ export const importColumnMappingSchema = z.object({
   occurredOn: z.string().min(1),
   amount: z.string().min(1),
   type: z.string().optional(),
+  settlement: z.string().optional(),
   description: z.string().optional(),
   category: z.string().optional(),
   costCenter: z.string().optional(),
@@ -554,6 +560,7 @@ export const importPreviewRowUpdateSchema = z.object({
   occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amountCents: z.number().int().positive(),
   type: z.enum(['income', 'expense']),
+  settlement: z.enum(['paid', 'pending']).optional(),
   description: z.string().max(500).optional().nullable(),
   category: z.string().max(120).optional().nullable(),
   costCenter: z.string().max(120).optional().nullable(),

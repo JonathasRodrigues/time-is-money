@@ -51,6 +51,7 @@ export const importPreviewRowSchema = z.object({
   occurredOn: z.string().optional(),
   amountCents: z.number().int().optional(),
   type: z.enum(['income', 'expense']).optional(),
+  settlement: z.enum(['paid', 'pending']).optional(),
   description: z.string().optional(),
   category: z.string().optional(),
   costCenter: z.string().optional(),
