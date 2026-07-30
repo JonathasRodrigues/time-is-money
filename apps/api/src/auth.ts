@@ -48,7 +48,7 @@ async function membershipSession(
 
   return {
     userId,
-    email,
+    email: email ?? membership.email ?? null,
     householdId: membership.householdId,
     role: membership.role as Role,
     mfaEnabled: true,
@@ -127,7 +127,10 @@ export async function getAuthSession(request: Request): Promise<AuthSession | nu
   const email =
     auth.sessionClaims?.email && typeof auth.sessionClaims.email === 'string'
       ? auth.sessionClaims.email
-      : null;
+      : auth.sessionClaims?.primary_email_address &&
+          typeof auth.sessionClaims.primary_email_address === 'string'
+        ? auth.sessionClaims.primary_email_address
+        : null;
 
   return membershipSession(userId, email);
 }

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { UserButton } from '@clerk/nextjs';
 import {
   ArrowLeftRight,
   Building2,
@@ -176,6 +177,7 @@ export function AppShell({
   userLabel,
   ttsEnabled = false,
   canManageMembers = false,
+  useClerkAccount = false,
 }: {
   children: React.ReactNode;
   demo: boolean;
@@ -183,6 +185,8 @@ export function AppShell({
   userLabel: string;
   ttsEnabled?: boolean;
   canManageMembers?: boolean;
+  /** Quando true, usa UserButton do Clerk (foto, gerenciar conta, sair). */
+  useClerkAccount?: boolean;
 }): React.ReactElement {
   const pathname = usePathname();
   const systemNav = buildSystemNav(canManageMembers);
@@ -203,6 +207,7 @@ export function AppShell({
             userLabel={userLabel}
             ttsEnabled={ttsEnabled}
             canManageMembers={canManageMembers}
+            useClerkAccount={useClerkAccount}
             pathname={pathname}
             systemNav={systemNav}
             initials={initials}
@@ -241,6 +246,7 @@ function AppShellFrame({
   userLabel,
   ttsEnabled,
   canManageMembers,
+  useClerkAccount,
   pathname,
   systemNav,
   initials,
@@ -251,6 +257,7 @@ function AppShellFrame({
   userLabel: string;
   ttsEnabled: boolean;
   canManageMembers: boolean;
+  useClerkAccount: boolean;
   pathname: string;
   systemNav: SystemNavItem[];
   initials: string;
@@ -343,46 +350,78 @@ function AppShellFrame({
             <ThemeToggle />
           </div>
           <PwaInstallPrompt />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-lg border bg-background/80 p-2 text-left transition hover:bg-accent"
+          {useClerkAccount ? (
+            <div className="flex w-full items-center gap-3 rounded-lg border bg-background/80 p-2 group-data-[collapsible=icon]:justify-center">
+              <UserButton
+                afterSignOutUrl="/"
+                appearance={{
+                  elements: {
+                    avatarBox: 'size-8',
+                    userButtonPopoverCard: 'z-[100]',
+                  },
+                }}
               >
-                <Avatar className="size-8">
-                  <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
-                    {initials || 'U'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                  <p className="truncate text-sm font-medium">{userLabel}</p>
-                  <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
-                </div>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Conta</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/cadastros/categories">Categorias</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/cadastros/accounts">Bancos e contas</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/cadastros/cost-centers">Centros de custo</Link>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem asChild>
-                <Link href="/settings/preferences">Preferências</Link>
-              </DropdownMenuItem>
-              {canManageMembers ? (
+                <UserButton.MenuItems>
+                  <UserButton.Link
+                    label="Preferências"
+                    labelIcon={<SlidersHorizontal className="size-4" />}
+                    href="/settings/preferences"
+                  />
+                  {canManageMembers ? (
+                    <UserButton.Link
+                      label="Família"
+                      labelIcon={<Users className="size-4" />}
+                      href="/settings/members"
+                    />
+                  ) : null}
+                </UserButton.MenuItems>
+              </UserButton>
+              <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                <p className="truncate text-sm font-medium">{userLabel}</p>
+                <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
+              </div>
+            </div>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-lg border bg-background/80 p-2 text-left transition hover:bg-accent"
+                >
+                  <Avatar className="size-8">
+                    <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
+                      {initials || 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                    <p className="truncate text-sm font-medium">{userLabel}</p>
+                    <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Conta</DropdownMenuLabel>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/settings/members">Família</Link>
+                  <Link href="/cadastros/categories">Categorias</Link>
                 </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem asChild>
+                  <Link href="/cadastros/accounts">Bancos e contas</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/cadastros/cost-centers">Centros de custo</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/preferences">Preferências</Link>
+                </DropdownMenuItem>
+                {canManageMembers ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/members">Família</Link>
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </SidebarFooter>
       </Sidebar>
 
