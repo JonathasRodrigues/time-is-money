@@ -57,16 +57,21 @@ export const paymentRowSchema = z.object({
   purchases: z.array(invoicePurchaseSchema).optional(),
 });
 
-/** Já pago / já recebido no período (somente leitura). */
+/** Já pago / já recebido no período (editável: forma, valor, data…). */
 export const settledPaymentRowSchema = z.object({
   id: z.string().uuid(),
   dueOn: isoDateSchema.nullable(),
   paidOn: isoDateSchema.nullable(),
   description: z.string().nullable(),
   kind: payableKindSchema,
+  costCenterId: z.string().uuid(),
   costCenterName: z.string(),
+  categoryId: z.string().uuid(),
   categoryName: z.string(),
+  accountId: z.string().uuid(),
   accountName: z.string(),
+  paymentRail: z.enum(['pix', 'debit', 'ted', 'boleto', 'cash', 'other']).nullable(),
+  paymentMethodId: z.string().uuid().nullable(),
   paymentMethodLabel: z.string(),
   amountCents: z.number().int(),
 });

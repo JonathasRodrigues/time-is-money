@@ -272,7 +272,14 @@ function PaymentsContent({ data }: { data: PaymentsResponse }): React.ReactEleme
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0 sm:px-5">
-          <SettledPaymentsTable mode={isReceive ? 'receive' : 'pay'} rows={settledRows} />
+          <SettledPaymentsTable
+            mode={isReceive ? 'receive' : 'pay'}
+            today={today}
+            paymentMethods={lookups.paymentMethods}
+            centers={lookups.centers}
+            categories={isReceive ? lookups.incomeCategories : lookups.expenseCategories}
+            rows={settledRows}
+          />
         </CardContent>
       </Card>
     </div>

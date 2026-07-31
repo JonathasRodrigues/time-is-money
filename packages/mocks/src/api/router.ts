@@ -322,10 +322,15 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
     paidOn: row.paidOn ?? row.occurredOn,
     description: row.description,
     kind: 'variable' as const,
+    costCenterId: row.costCenterId,
     costCenterName: row.costCenterName,
+    categoryId: row.categoryId,
     categoryName: row.categoryName,
+    accountId: row.accountId,
     accountName: accountNameById.get(row.accountId) ?? 'Conta',
-    paymentMethodLabel: `${accountNameById.get(row.accountId) ?? 'Conta'} · PIX`,
+    paymentRail: 'pix' as const,
+    paymentMethodId: null,
+    paymentMethodLabel: `PIX · ${accountNameById.get(row.accountId) ?? 'Conta'}`,
     amountCents: row.amountCents ?? 0,
   }));
 

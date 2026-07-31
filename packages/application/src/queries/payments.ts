@@ -192,7 +192,7 @@ export async function loadPayments(
       });
       const account = accountMap.get(row.accountId);
       const rail = row.paymentRail;
-      const paymentRail =
+      const paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null =
         rail === 'pix' ||
         rail === 'debit' ||
         rail === 'ted' ||
@@ -214,9 +214,14 @@ export async function loadPayments(
         paidOn: row.paidOn,
         description: row.description,
         kind,
+        costCenterId: row.costCenterId,
         costCenterName: centerMap.get(row.costCenterId) ?? '—',
+        categoryId: row.categoryId,
         categoryName: catMap.get(row.categoryId) ?? 'Categoria',
+        accountId: row.accountId,
         accountName: account?.name ?? 'Conta',
+        paymentRail,
+        paymentMethodId: row.paymentMethodId ?? null,
         paymentMethodLabel,
         amountCents: row.amountCents ?? 0,
       };
