@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "Time is Money",
-  "short_name": "TIM",
+  "short_name": "Minhas Contas",
   "description": "Finanças domésticas compartilhadas",
   "start_url": "/dashboard",
   "scope": "/",
