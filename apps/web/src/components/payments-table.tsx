@@ -102,9 +102,9 @@ export function PaymentsTable({
         linkedAccountName: account.name,
         linkedInstitutionName: null,
         balanceCents: null,
-        label: `${account.name} · ${
+        label: `${
           rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'
-        }`,
+        } · ${account.name}`,
       })),
     );
   }, [paymentMethods, accounts, mode]);

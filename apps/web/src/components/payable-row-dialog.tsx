@@ -81,7 +81,10 @@ export function PayableRowDialog({
 
   const methods = useMemo((): PaymentMethodOption[] => {
     const accountOnly = paymentMethods.filter((method) => method.type === 'account');
-    if (isReceive || isInvoice) return uniqueAccountMethods(accountOnly);
+    // Contas a receber: só conta (sem PIX/débito/TED).
+    if (isReceive) return uniqueAccountMethods(accountOnly);
+    // Quitar fatura: formas na conta (PIX/débito/TED), não só o nome da conta.
+    if (isInvoice) return accountOnly;
     return paymentMethods;
   }, [paymentMethods, isReceive, isInvoice]);
 
@@ -139,6 +142,13 @@ export function PayableRowDialog({
     return formData;
   }
 
+  function appendPaymentMethodFields(formData: FormData): void {
+    // Pendente: só forma na conta (rail). Cartão é escolhido na quitação.
+    formData.set('accountId', method?.accountId ?? row.accountId);
+    formData.set('paymentRail', method?.paymentRail ?? 'pix');
+    formData.set('creditCardId', '');
+  }
+
   function handleSave(): void {
     if (isInvoice) return;
     const formData = new FormData();
@@ -150,7 +160,7 @@ export function PayableRowDialog({
     formData.set('amount', editAmount);
     formData.set('costCenterId', costCenterId);
     formData.set('categoryId', categoryId);
-    formData.set('accountId', method?.accountId ?? row.accountId);
+    appendPaymentMethodFields(formData);
 
     startTransition(async () => {
       try {
@@ -202,7 +212,7 @@ export function PayableRowDialog({
           editForm.set('amount', editAmount || payAmount);
           editForm.set('costCenterId', costCenterId);
           editForm.set('categoryId', categoryId);
-          editForm.set('accountId', method?.accountId ?? row.accountId);
+          appendPaymentMethodFields(editForm);
           await updateTransactionAction(editForm);
         }
 
@@ -312,8 +322,39 @@ export function PayableRowDialog({
                   ))}
                 </select>
               </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`payable-planned-method-${row.id}`}>
+                  {isReceive ? 'Conta prevista' : 'Forma de pagamento'}
+                </Label>
+                <select
+                  id={`payable-planned-method-${row.id}`}
+                  className={nativeSelectClassName}
+                  value={method?.id ?? methodId}
+                  onChange={(event) => setMethodId(event.target.value)}
+                  disabled={pending || methods.length === 0}
+                >
+                  {isReceive ? (
+                    methods.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {receiveAccountSelectLabel(item)}
+                      </option>
+                    ))
+                  ) : (
+                    <PaymentMethodSelectGroups
+                      accountMethods={methods.filter((item) => item.type === 'account')}
+                      cardMethods={[]}
+                      showCards={false}
+                    />
+                  )}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {isReceive
+                    ? 'Conta onde o valor deve entrar.'
+                    : 'Sugestão para a quitação (PIX, débito, TED…). Cartão só na hora de pagar.'}
+                </p>
+              </div>
               <div className="border-t pt-3">
-                <p className="mb-3 text-sm font-medium">{actionVerb}</p>
+                <p className="mb-3 text-sm font-medium">{actionVerb} agora</p>
               </div>
             </>
           ) : (
@@ -338,32 +379,34 @@ export function PayableRowDialog({
             />
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor={`payable-method-${row.id}`}>
-              {isReceive ? 'Conta' : isInvoice ? 'Como quitar o cartão' : 'Forma de pagamento'}
-            </Label>
-            <select
-              id={`payable-method-${row.id}`}
-              className={nativeSelectClassName}
-              value={method?.id ?? methodId}
-              onChange={(event) => setMethodId(event.target.value)}
-              disabled={pending || methods.length === 0}
-            >
-              {isReceive ? (
-                methods.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {receiveAccountSelectLabel(item)}
-                  </option>
-                ))
-              ) : (
-                <PaymentMethodSelectGroups
-                  accountMethods={methods.filter((item) => item.type === 'account')}
-                  cardMethods={methods.filter((item) => item.type === 'credit_card')}
-                  showCards={!isInvoice}
-                />
-              )}
-            </select>
-          </div>
+          {showEdit ? null : (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`payable-method-${row.id}`}>
+                {isReceive ? 'Conta' : isInvoice ? 'Como quitar o cartão' : 'Forma de pagamento'}
+              </Label>
+              <select
+                id={`payable-method-${row.id}`}
+                className={nativeSelectClassName}
+                value={method?.id ?? methodId}
+                onChange={(event) => setMethodId(event.target.value)}
+                disabled={pending || methods.length === 0}
+              >
+                {isReceive ? (
+                  methods.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {receiveAccountSelectLabel(item)}
+                    </option>
+                  ))
+                ) : (
+                  <PaymentMethodSelectGroups
+                    accountMethods={methods.filter((item) => item.type === 'account')}
+                    cardMethods={methods.filter((item) => item.type === 'credit_card')}
+                    showCards={!isInvoice}
+                  />
+                )}
+              </select>
+            </div>
+          )}
 
           <div className="grid gap-1.5">
             <Label htmlFor={`payable-pay-amount-${row.id}`}>Valor (R$)</Label>
@@ -390,7 +433,7 @@ export function PayableRowDialog({
                 ? 'Credita esta conta agora.'
                 : payWithCard
                   ? 'Compra no crédito → entra na fatura. A conta só é debitada ao quitar a fatura.'
-                  : 'Debita a conta vinculada a esta forma agora.'}
+                  : 'Debita via esta forma de pagamento agora.'}
             </p>
           )}
         </div>
