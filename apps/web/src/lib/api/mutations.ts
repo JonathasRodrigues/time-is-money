@@ -701,6 +701,7 @@ export async function updatePendingAmountAction(formData: FormData): Promise<voi
 export async function updateTransactionAction(formData: FormData): Promise<void> {
   const amountRaw = str(formData, 'amount');
   const creditCardRaw = str(formData, 'creditCardId').trim();
+  const paymentMethodRaw = str(formData, 'paymentMethodId').trim();
   const paymentRail = optionalPaymentRailFromForm(formData, 'paymentRail');
   await api.transactions.update(str(formData, 'transactionId'), {
     costCenterId: str(formData, 'costCenterId'),
@@ -708,6 +709,7 @@ export async function updateTransactionAction(formData: FormData): Promise<void>
     accountId: str(formData, 'accountId'),
     creditCardId: creditCardRaw === '' ? null : creditCardRaw,
     paymentRail: creditCardRaw !== '' ? null : (paymentRail ?? null),
+    paymentMethodId: paymentMethodRaw === '' ? null : paymentMethodRaw,
     type: transactionTypeSchema.parse(str(formData, 'type')),
     status: str(formData, 'status') === 'pending' ? 'pending' : 'paid',
     amountCents: amountRaw === '' ? null : moneyCentsFromForm(formData, 'amount'),

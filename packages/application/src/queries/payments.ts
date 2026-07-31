@@ -6,7 +6,6 @@ import {
   estimatePayableCents,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
-  INSTANT_ACCOUNT_PAYMENT_RAILS,
   resolvePayableKind,
   suggestAverageAmountCents,
   yearMonthFromIso,
@@ -18,6 +17,7 @@ import {
   creditCardInvoices,
   creditCards,
   institutions,
+  paymentMethods as paymentMethodsTable,
   transactions,
 } from '@tim/db';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
@@ -25,6 +25,7 @@ import { resolveCostCenterId, resolveDateRangeWithLegacyMonth } from '@tim/domai
 import { requireSession } from '@tim/auth';
 import type { AppContext } from '../context';
 import { closeDueCreditCardInvoices, sumInvoiceBalanceCents } from '../card-invoices';
+import { ensureAccountPaymentMethods, ensureCreditCardPaymentMethod } from '../payment-methods';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -268,43 +269,89 @@ export async function loadPayments(
       };
     });
 
-  const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = [
-    ...tableAccounts.flatMap((account) => {
-      const full = accountMap.get(account.id);
-      const institutionName = full?.institutionId
-        ? (institutionMap.get(full.institutionId) ?? null)
+  // Garante formas persistidas (legado / contas criadas antes da migration).
+  for (const account of accs) {
+    if (account.isArchived) continue;
+    await ensureAccountPaymentMethods(db, {
+      householdId: session.householdId,
+      accountId: account.id,
+      kind: account.kind,
+    });
+  }
+  for (const card of cards) {
+    if (card.isArchived) continue;
+    await ensureCreditCardPaymentMethod(db, {
+      householdId: session.householdId,
+      creditCardId: card.id,
+      paymentAccountId: card.paymentAccountId,
+      cardMode: card.cardMode,
+    });
+  }
+
+  const methodRows = await db
+    .select()
+    .from(paymentMethodsTable)
+    .where(
+      and(
+        eq(paymentMethodsTable.householdId, session.householdId),
+        eq(paymentMethodsTable.isArchived, false),
+      ),
+    );
+
+  const tableAccountIds = new Set(tableAccounts.map((a) => a.id));
+  const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = methodRows
+    .filter((method) => {
+      if (method.type === 'account') return tableAccountIds.has(method.accountId);
+      if (flow !== 'pay') return false;
+      return (
+        method.creditCardId != null &&
+        cardHasCredit(cards.find((c) => c.id === method.creditCardId)?.cardMode ?? 'debit')
+      );
+    })
+    .map((method) => {
+      if (method.type === 'credit_card' && method.creditCardId) {
+        const card = creditCardsLookup.find((c) => c.id === method.creditCardId);
+        return {
+          id: method.id,
+          type: 'credit_card' as const,
+          accountId: method.accountId,
+          creditCardId: method.creditCardId,
+          paymentRail: null as 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null,
+          linkedAccountName: card?.linkedAccountName ?? null,
+          linkedInstitutionName: card?.linkedInstitutionName ?? null,
+          balanceCents: card?.availableCents ?? null,
+          label: card?.label ?? 'Crédito',
+        };
+      }
+      const account = accountMap.get(method.accountId);
+      const institutionName = account?.institutionId
+        ? (institutionMap.get(account.institutionId) ?? null)
         : null;
-      return INSTANT_ACCOUNT_PAYMENT_RAILS.map((rail) => ({
-        id: `account:${account.id}:${rail}`,
+      const rail =
+        method.paymentRail === 'pix' ||
+        method.paymentRail === 'debit' ||
+        method.paymentRail === 'ted' ||
+        method.paymentRail === 'boleto' ||
+        method.paymentRail === 'cash' ||
+        method.paymentRail === 'other'
+          ? method.paymentRail
+          : null;
+      return {
+        id: method.id,
         type: 'account' as const,
-        accountId: account.id,
+        accountId: method.accountId,
         creditCardId: null,
         paymentRail: rail,
-        linkedAccountName: account.name,
+        linkedAccountName: account?.name ?? 'Conta',
         linkedInstitutionName: institutionName,
-        balanceCents: full?.balanceCents ?? 0,
+        balanceCents: account?.balanceCents ?? 0,
         label: formatAccountPaymentMethodLabel({
-          accountName: account.name,
+          accountName: account?.name ?? 'Conta',
           institutionName,
           paymentRail: rail,
         }),
-      }));
-    }),
-    ...(flow === 'pay'
-      ? creditCardsLookup.map((card) => ({
-          id: `card:${card.id}`,
-          type: 'credit_card' as const,
-          /** Conta de pagamento vinculada — agrupa o cartão com o banco/conta na UI. */
-          accountId: card.paymentAccountId as string | null,
-          creditCardId: card.id,
-          paymentRail: null as 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null,
-          linkedAccountName: card.linkedAccountName,
-          linkedInstitutionName: card.linkedInstitutionName,
-          balanceCents: card.availableCents,
-          label: card.label,
-        }))
-      : []),
-  ];
+      };
+    });
 
   let cardInvoice: PaymentsResponse['cardInvoice'] = null;
 
@@ -384,6 +431,7 @@ export async function loadPayments(
           accountId: card.paymentAccountId,
           amountCents: balance,
           paymentRail: null,
+          paymentMethodId: null,
           suggestedCents: balance,
           estimatedCents: balance,
           creditCardId: card.id,
@@ -452,6 +500,7 @@ export async function loadPayments(
             row.paymentRail === 'other'
               ? row.paymentRail
               : null,
+          paymentMethodId: row.paymentMethodId ?? null,
           suggestedCents: row.suggestedCents,
           estimatedCents: row.estimatedCents,
           creditCardId: null,

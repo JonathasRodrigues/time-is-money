@@ -146,6 +146,7 @@ export function PayableRowDialog({
     // Pendente: só forma na conta (rail). Cartão é escolhido na quitação.
     formData.set('accountId', method?.accountId ?? row.accountId);
     formData.set('paymentRail', method?.paymentRail ?? 'pix');
+    if (method?.id) formData.set('paymentMethodId', method.id);
     formData.set('creditCardId', '');
   }
 

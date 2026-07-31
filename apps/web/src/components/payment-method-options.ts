@@ -21,6 +21,8 @@ export interface PayableRow {
   amountCents: number | null;
   /** Meio previsto na quitação, quando cadastrado. */
   paymentRail?: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null;
+  /** Forma persistida (FK). Preferir este campo. */
+  paymentMethodId?: string | null;
   suggestedCents: number | null;
   estimatedCents: number;
   creditCardId?: string | null;
@@ -175,8 +177,10 @@ export function uniqueAccountMethods(methods: PaymentMethodOption[]): PaymentMet
     if (!existing || method.paymentRail === 'pix') {
       byAccount.set(method.accountId, {
         ...method,
-        paymentRail: 'pix',
-        id: `account:${method.accountId}:pix`,
+        paymentRail:
+          method.paymentRail === 'pix' || !existing
+            ? (method.paymentRail ?? 'pix')
+            : existing.paymentRail,
         label: method.linkedAccountName?.trim() || method.label,
       });
     }
@@ -205,13 +209,17 @@ export function methodLacksBalance(
 }
 
 export function defaultPaymentMethodId(
-  row: Pick<PayableRow, 'accountId' | 'paymentRail' | 'kind'>,
+  row: Pick<PayableRow, 'accountId' | 'paymentRail' | 'paymentMethodId' | 'kind'>,
   methods: PaymentMethodOption[],
 ): string {
   const pool =
     row.kind === 'credit_card_invoice'
       ? methods.filter((method) => method.type === 'account')
       : methods;
+  if (row.paymentMethodId) {
+    const byId = pool.find((method) => method.id === row.paymentMethodId);
+    if (byId) return byId.id;
+  }
   if (row.paymentRail) {
     const byAccountRail = pool.find(
       (method) =>
@@ -231,7 +239,7 @@ export function defaultPaymentMethodId(
   const byAccount = pool.find(
     (method) => method.type === 'account' && method.accountId === row.accountId,
   );
-  return byAccount?.id ?? pool[0]?.id ?? `account:${row.accountId}:pix`;
+  return byAccount?.id ?? pool[0]?.id ?? '';
 }
 
 export function payAmountCents(

@@ -137,6 +137,7 @@ export const creditCardInvoiceStatusEnum = pgEnum('credit_card_invoice_status', 
   'closed',
   'paid',
 ]);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['account', 'credit_card']);
 
 export const institutions = pgTable('institutions', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -234,6 +235,39 @@ export const creditCardInvoices = pgTable(
   ],
 );
 
+/**
+ * Forma de pagamento persistida (não sintetizar na UI).
+ * - account: conta + meio (PIX/débito/TED/boleto/…)
+ * - credit_card: cartão com crédito; accountId = conta de quitação da fatura
+ */
+export const paymentMethods = pgTable(
+  'payment_methods',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => households.id, { onDelete: 'cascade' }),
+    type: paymentMethodTypeEnum('type').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    creditCardId: uuid('credit_card_id').references(() => creditCards.id, {
+      onDelete: 'cascade',
+    }),
+    /** pix | debit | ted | boleto | cash | other — null no tipo credit_card. */
+    paymentRail: varchar('payment_rail', { length: 16 }),
+    isArchived: boolean('is_archived').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('payment_methods_household_idx').on(table.householdId),
+    index('payment_methods_account_idx').on(table.accountId),
+    uniqueIndex('payment_methods_account_rail_uidx').on(table.accountId, table.paymentRail),
+    uniqueIndex('payment_methods_card_uidx').on(table.creditCardId),
+  ],
+);
+
 export const accountTransfers = pgTable(
   'account_transfers',
   {
@@ -278,6 +312,9 @@ export const transactionSeries = pgTable('transaction_series', {
   dueDay: integer('due_day').notNull(),
   defaultAmountCents: integer('default_amount_cents'),
   defaultPaymentRail: varchar('default_payment_rail', { length: 16 }),
+  defaultPaymentMethodId: uuid('default_payment_method_id').references(() => paymentMethods.id, {
+    onDelete: 'set null',
+  }),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -309,6 +346,10 @@ export const transactions = pgTable(
     }),
     /** Meio de pagamento na conta: pix | debit | ted | boleto | cash | other. */
     paymentRail: varchar('payment_rail', { length: 16 }),
+    /** Forma de pagamento (FK). Preferir este campo; rail/account derivam dele. */
+    paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id, {
+      onDelete: 'set null',
+    }),
     type: transactionTypeEnum('type').notNull(),
     status: transactionStatusEnum('status').notNull().default('paid'),
     amountCents: integer('amount_cents'),

@@ -13,6 +13,7 @@ import {
 } from '@tim/validators';
 import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
+import { ensureAccountPaymentMethods } from '../payment-methods.js';
 
 export async function createCostCenter(ctx: AppContext, raw: unknown) {
   const session = requireSession(ctx.session);
@@ -177,6 +178,11 @@ export async function createAccount(ctx: AppContext, raw: unknown): Promise<{ id
   if (!created) {
     throw new Error('Falha ao criar conta');
   }
+  await ensureAccountPaymentMethods(ctx.db, {
+    householdId: input.householdId,
+    accountId: created.id,
+    kind: input.kind,
+  });
   return { id: created.id };
 }
 

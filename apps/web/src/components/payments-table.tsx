@@ -73,41 +73,11 @@ export function PaymentsTable({
 }): React.ReactElement {
   const methods = useMemo((): PaymentMethodOption[] => {
     if (mode === 'receive') {
-      const accountMethods =
-        paymentMethods && paymentMethods.length > 0
-          ? paymentMethods.filter((method) => method.type === 'account')
-          : accounts.map((account) => ({
-              id: `account:${account.id}:pix`,
-              type: 'account' as const,
-              accountId: account.id,
-              creditCardId: null,
-              paymentRail: 'pix' as const,
-              linkedAccountName: account.name,
-              linkedInstitutionName: null,
-              balanceCents: null,
-              label: account.name,
-            }));
+      const accountMethods = (paymentMethods ?? []).filter((method) => method.type === 'account');
       return uniqueAccountMethods(accountMethods);
     }
-    if (paymentMethods && paymentMethods.length > 0) {
-      return paymentMethods;
-    }
-    return accounts.flatMap((account) =>
-      (['pix', 'debit', 'ted', 'boleto'] as const).map((rail) => ({
-        id: `account:${account.id}:${rail}`,
-        type: 'account' as const,
-        accountId: account.id,
-        creditCardId: null,
-        paymentRail: rail,
-        linkedAccountName: account.name,
-        linkedInstitutionName: null,
-        balanceCents: null,
-        label: `${
-          rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'
-        } · ${account.name}`,
-      })),
-    );
-  }, [paymentMethods, accounts, mode]);
+    return paymentMethods ?? [];
+  }, [paymentMethods, mode]);
 
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [applyAllDate, setApplyAllDate] = useState('');

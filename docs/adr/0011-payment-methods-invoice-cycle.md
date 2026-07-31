@@ -31,7 +31,7 @@ Ex.: mercado no Ultravioleta; no vencimento, PIX saindo da corrente Nubank.
 - Contas a pagar: compras no crédito **não** aparecem item a item — só a **fatura agrupada** para quitar o total; quitação só com forma na conta.
 - Ensure fecha faturas `open` com `closes_on < today`.
 - Sem juros/rotativo neste ADR.
-- Sem tabela `payment_methods` no MVP: formas são derivadas de contas (PIX/débito/TED) + cartões com crédito.
+- ~~Sem tabela `payment_methods` no MVP~~ → supersedido por **ADR 0012** (entidade + FK).
 
 ## Alternativas rejeitadas
 

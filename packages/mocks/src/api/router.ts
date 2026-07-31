@@ -380,8 +380,8 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
       ],
       paymentMethods: [
         ...tableAccounts.flatMap((account) =>
-          (['pix', 'debit', 'ted', 'boleto'] as const).map((rail) => ({
-            id: `account:${account.id}:${rail}`,
+          (['pix', 'debit', 'ted', 'boleto'] as const).map((rail, index) => ({
+            id: `00000000-0000-4000-8000-${`${account.id.replace(/-/g, '')}${index}`.padEnd(12, '0').slice(0, 12)}`,
             type: 'account' as const,
             accountId: account.id,
             creditCardId: null,
@@ -393,7 +393,7 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
           })),
         ),
         {
-          id: `card:${mockCard.id}`,
+          id: `00000000-0000-4000-8000-${mockCard.id.replace(/-/g, '').padEnd(12, '0').slice(0, 12)}`,
           type: 'credit_card' as const,
           accountId: mockCard.paymentAccountId,
           creditCardId: mockCard.id,

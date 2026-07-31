@@ -1,7 +1,7 @@
 import type { AuthSession } from '@tim/auth';
 import { requireCapability, requireSession } from '@tim/auth';
 import { encryptSensitiveField } from '@tim/crypto';
-import type { Database } from '@tim/db';
+import type { Database, DbClient } from '@tim/db';
 import {
   accountTransfers,
   accounts,
@@ -13,6 +13,7 @@ import {
   financings,
   installments,
   institutions,
+  paymentMethods,
   planItems,
   planContributions,
   plans,
@@ -91,6 +92,42 @@ import {
   refreshCardInvoiceBalanceCache,
   sumInvoiceBalanceCents,
 } from './card-invoices';
+import {
+  ensureCreditCardPaymentMethod,
+  findAccountPaymentMethod,
+  findCreditCardPaymentMethod,
+  getPaymentMethodById,
+} from './payment-methods';
+
+async function resolvePaymentMethodId(
+  db: DbClient,
+  householdId: string,
+  input: {
+    paymentMethodId?: string | null;
+    accountId?: string | null;
+    creditCardId?: string | null;
+    paymentRail?: string | null;
+  },
+): Promise<string | null> {
+  if (input.paymentMethodId) {
+    const byId = await getPaymentMethodById(db, householdId, input.paymentMethodId);
+    if (byId) return byId.id;
+  }
+  if (input.creditCardId) {
+    const byCard = await findCreditCardPaymentMethod(db, householdId, input.creditCardId);
+    if (byCard) return byCard.id;
+  }
+  if (input.accountId) {
+    const byAccount = await findAccountPaymentMethod(
+      db,
+      householdId,
+      input.accountId,
+      input.paymentRail,
+    );
+    if (byAccount) return byAccount.id;
+  }
+  return null;
+}
 
 export type { AppContext } from './context';
 export {
@@ -270,6 +307,11 @@ export async function createTransaction(
         creditCardId,
         creditCardInvoiceId,
         paymentRail,
+        paymentMethodId: await resolvePaymentMethodId(dbTx, session.householdId, {
+          accountId: resolvedAccountId,
+          creditCardId,
+          paymentRail,
+        }),
         type: input.type,
         status,
         amountCents: input.amountCents,
@@ -699,6 +741,12 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
       : input.paymentRail === undefined
         ? tx.paymentRail
         : input.paymentRail;
+  const paymentMethodId = await resolvePaymentMethodId(ctx.db, session.householdId, {
+    paymentMethodId: input.paymentMethodId,
+    accountId: input.accountId,
+    creditCardId,
+    paymentRail,
+  });
 
   if (creditCardId) {
     assertCardPurchase({
@@ -744,6 +792,7 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
         accountId: input.accountId,
         creditCardId,
         paymentRail,
+        paymentMethodId,
         type: input.type,
         status: input.status,
         amountCents,
@@ -1669,6 +1718,15 @@ export async function createCreditCard(ctx: AppContext, raw: CreateCreditCardInp
       dueDay: input.cardMode === 'debit' ? 1 : input.dueDay,
     })
     .returning();
+
+  if (row) {
+    await ensureCreditCardPaymentMethod(ctx.db, {
+      householdId: session.householdId,
+      creditCardId: row.id,
+      paymentAccountId: input.paymentAccountId,
+      cardMode: input.cardMode,
+    });
+  }
 
   await writeAudit(ctx, {
     action: 'create',

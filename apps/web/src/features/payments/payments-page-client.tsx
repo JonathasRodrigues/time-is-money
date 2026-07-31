@@ -238,6 +238,7 @@ function PaymentsContent({ data }: { data: PaymentsResponse }): React.ReactEleme
                     accountId: row.accountId,
                     amountCents: row.amountCents,
                     paymentRail: row.paymentRail,
+                    paymentMethodId: row.paymentMethodId ?? null,
                     suggestedCents: row.suggestedCents,
                     estimatedCents: row.estimatedCents,
                     creditCardId: row.creditCardId,

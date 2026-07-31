@@ -40,6 +40,8 @@ export const paymentRowSchema = z.object({
   amountCents: z.number().int().nullable(),
   /** Meio previsto na quitação (PIX/débito/TED), quando cadastrado. */
   paymentRail: z.enum(['pix', 'debit', 'ted', 'boleto', 'cash', 'other']).nullable(),
+  /** Forma de pagamento persistida (FK). */
+  paymentMethodId: z.string().uuid().nullable().optional(),
   suggestedCents: z.number().int().nullable(),
   estimatedCents: z.number().int(),
   /**
@@ -70,7 +72,7 @@ export const settledPaymentRowSchema = z.object({
 });
 
 export const paymentMethodSchema = z.object({
-  id: z.string(),
+  id: z.string().uuid(),
   type: z.enum(['account', 'credit_card']),
   accountId: z.string().uuid().nullable(),
   creditCardId: z.string().uuid().nullable(),
