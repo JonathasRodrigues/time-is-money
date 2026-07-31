@@ -15,6 +15,7 @@ import {
   PlanProgressChart,
 } from '@/components/charts';
 import { InsightItem, KpiCard, SectionLink, StatusBadge } from '@/components/dashboard-widgets';
+import { MobileDataCard, MobileDataEmpty, MobileDataList } from '@/components/mobile-data-list';
 import { PageHeader } from '@/components/page-header';
 import { DashboardPageSkeleton } from '@/components/page-skeletons';
 import { QueryBoundary } from '@/components/query-boundary';
@@ -621,41 +622,68 @@ function DashboardContent({ data }: { data: DashboardResponse }): React.ReactEle
             />
           </CardHeader>
           <CardContent className="px-0 sm:px-5">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Contrato</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dueInstallments.length === 0 ? (
+            <MobileDataList
+              empty={
+                dueInstallments.length === 0 ? (
+                  <MobileDataEmpty>Nenhuma parcela pendente.</MobileDataEmpty>
+                ) : undefined
+              }
+            >
+              {dueInstallments.map((item) => (
+                <MobileDataCard
+                  key={`m-${item.id}`}
+                  title={
+                    <>
+                      {item.financingName}
+                      <span className="ml-1 font-normal text-muted-foreground">#{item.number}</span>
+                    </>
+                  }
+                  amount={formatBrlFromCents(item.amountCents)}
+                  badges={<StatusBadge label={item.statusLabel} variant={item.statusVariant} />}
+                  meta={`venc. ${formatIsoDateBr(item.dueOn)}`}
+                />
+              ))}
+            </MobileDataList>
+
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                      Nenhuma parcela pendente.
-                    </TableCell>
+                    <TableHead>Contrato</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Vencimento</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
                   </TableRow>
-                ) : (
-                  dueInstallments.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">
-                        {item.financingName}
-                        <span className="ml-1 text-xs text-muted-foreground">#{item.number}</span>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge label={item.statusLabel} variant={item.statusVariant} />
-                      </TableCell>
-                      <TableCell className="tabular-nums">{formatIsoDateBr(item.dueOn)}</TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatBrlFromCents(item.amountCents)}
+                </TableHeader>
+                <TableBody>
+                  {dueInstallments.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                        Nenhuma parcela pendente.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    dueInstallments.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">
+                          {item.financingName}
+                          <span className="ml-1 text-xs text-muted-foreground">#{item.number}</span>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge label={item.statusLabel} variant={item.statusVariant} />
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {formatIsoDateBr(item.dueOn)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {formatBrlFromCents(item.amountCents)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -669,47 +697,73 @@ function DashboardContent({ data }: { data: DashboardResponse }): React.ReactEle
           <SectionLink href={buildScopeHref('/transactions', hrefQuery)} label="Ver todos" />
         </CardHeader>
         <CardContent className="px-0 sm:px-5">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Centro</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentTransactions.length === 0 ? (
+          <MobileDataList
+            empty={
+              recentTransactions.length === 0 ? (
+                <MobileDataEmpty>Nenhum movimento ainda.</MobileDataEmpty>
+              ) : undefined
+            }
+          >
+            {recentTransactions.map((row) => (
+              <MobileDataCard
+                key={`m-${row.id}`}
+                title={row.description || row.categoryName || 'Lançamento'}
+                subtitle={`${row.categoryName}${row.costCenterName ? ` · ${row.costCenterName}` : ''}`}
+                amount={
+                  <>
+                    {row.type === 'income' ? '+' : '−'}
+                    {formatBrlFromCents(row.amountCents)}
+                  </>
+                }
+                amountTone={row.type === 'income' ? 'income' : 'expense'}
+                meta={formatIsoDateBr(row.occurredOn)}
+              />
+            ))}
+          </MobileDataList>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
-                    Nenhum movimento ainda.
-                  </TableCell>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead>Centro</TableHead>
+                  <TableHead>Categoria</TableHead>
+                  <TableHead className="text-right">Valor</TableHead>
                 </TableRow>
-              ) : (
-                recentTransactions.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {formatIsoDateBr(row.occurredOn)}
-                    </TableCell>
-                    <TableCell className="max-w-[240px] truncate font-medium">
-                      {row.description || row.categoryName || 'Lançamento'}
-                    </TableCell>
-                    <TableCell>{row.costCenterName}</TableCell>
-                    <TableCell>{row.categoryName}</TableCell>
-                    <TableCell
-                      className={`text-right font-medium tabular-nums ${
-                        row.type === 'income' ? 'text-primary' : ''
-                      }`}
-                    >
-                      {row.type === 'income' ? '+' : '−'}
-                      {formatBrlFromCents(row.amountCents)}
+              </TableHeader>
+              <TableBody>
+                {recentTransactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
+                      Nenhum movimento ainda.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  recentTransactions.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {formatIsoDateBr(row.occurredOn)}
+                      </TableCell>
+                      <TableCell className="max-w-[240px] truncate font-medium">
+                        {row.description || row.categoryName || 'Lançamento'}
+                      </TableCell>
+                      <TableCell>{row.costCenterName}</TableCell>
+                      <TableCell>{row.categoryName}</TableCell>
+                      <TableCell
+                        className={`text-right font-medium tabular-nums ${
+                          row.type === 'income' ? 'text-primary' : ''
+                        }`}
+                      >
+                        {row.type === 'income' ? '+' : '−'}
+                        {formatBrlFromCents(row.amountCents)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

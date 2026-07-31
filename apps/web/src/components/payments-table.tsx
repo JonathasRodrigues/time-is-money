@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { MobileDataCard, MobileDataEmpty, MobileDataList } from '@/components/mobile-data-list';
 import { PayableRowDialog, type PayableDialogIntent } from '@/components/payable-row-dialog';
 import {
   defaultPaymentMethodId,
@@ -324,10 +325,18 @@ export function PaymentsTable({
         </div>
       ) : null}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10">
+      <MobileDataList
+        empty={
+          optimisticRows.length === 0 ? (
+            <MobileDataEmpty>
+              {isReceive ? 'Nada a receber neste filtro.' : 'Nada a pagar neste filtro.'}
+            </MobileDataEmpty>
+          ) : undefined
+        }
+      >
+        {optimisticRows.length > 0 ? (
+          <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 className="size-4 rounded border border-input accent-primary"
@@ -336,111 +345,209 @@ export function PaymentsTable({
                 disabled={selectableIds.length === 0 || busy}
                 onChange={(event) => toggleAll(event.target.checked)}
               />
-            </TableHead>
-            <TableHead>Vencimento</TableHead>
-            <TableHead>Descrição</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Centro</TableHead>
-            <TableHead>{isReceive ? 'Conta' : 'Forma'}</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="text-right">Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {optimisticRows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                {isReceive ? 'Nada a receber neste filtro.' : 'Nada a pagar neste filtro.'}
-              </TableCell>
-            </TableRow>
-          ) : (
-            optimisticRows.map((row) => {
-              const overdue = (row.dueOn ?? '') < today;
-              const canSelect = payAmountCents(row) != null;
-              const amount = row.amountCents;
-              const methodId = defaultPaymentMethodId(row, methods);
-              const method = methods.find((item) => item.id === methodId) ?? methods[0];
-              const methodLabel = method
-                ? isReceive
-                  ? method.linkedAccountName?.trim() || method.label
-                  : method.label
-                : '—';
+              Selecionar todas
+            </label>
+          </div>
+        ) : null}
+        {optimisticRows.map((row) => {
+          const overdue = (row.dueOn ?? '') < today;
+          const canSelect = payAmountCents(row) != null;
+          const amount = row.amountCents;
+          const methodId = defaultPaymentMethodId(row, methods);
+          const method = methods.find((item) => item.id === methodId) ?? methods[0];
+          const methodLabel = method
+            ? isReceive
+              ? method.linkedAccountName?.trim() || method.label
+              : method.label
+            : '—';
 
-              return (
-                <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      className="size-4 rounded border border-input accent-primary"
-                      aria-label={`Selecionar ${row.description ?? 'conta'}`}
-                      checked={selected.has(row.id)}
-                      disabled={!canSelect || busy}
-                      title={canSelect ? undefined : 'Defina um valor antes de selecionar'}
-                      onChange={(event) => toggleOne(row.id, event.target.checked)}
-                    />
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    <span className={overdue ? 'text-destructive' : undefined}>
-                      {row.dueOn ? formatIsoDateBr(row.dueOn) : '—'}
-                    </span>
-                    {overdue ? (
-                      <Badge variant="destructive" className="ml-2">
-                        atraso
-                      </Badge>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <p className="font-medium">{row.description ?? 'Sem descrição'}</p>
-                    <p className="text-xs text-muted-foreground">{row.categoryName}</p>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
-                  </TableCell>
-                  <TableCell>{row.costCenterName}</TableCell>
-                  <TableCell className="max-w-[14rem] truncate text-muted-foreground">
-                    {methodLabel}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {amount != null ? (
-                      formatBrlFromCents(amount)
-                    ) : (
-                      <span className="text-muted-foreground">
-                        — · sugestão{' '}
-                        {row.suggestedCents != null
-                          ? formatBrlFromCents(row.suggestedCents)
-                          : 'n/d'}
+          return (
+            <MobileDataCard
+              key={`m-${row.id}`}
+              selected={selected.has(row.id)}
+              leading={
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border border-input accent-primary"
+                  aria-label={`Selecionar ${row.description ?? 'conta'}`}
+                  checked={selected.has(row.id)}
+                  disabled={!canSelect || busy}
+                  title={canSelect ? undefined : 'Defina um valor antes de selecionar'}
+                  onChange={(event) => toggleOne(row.id, event.target.checked)}
+                />
+              }
+              title={row.description ?? 'Sem descrição'}
+              subtitle={row.categoryName}
+              amount={
+                amount != null ? (
+                  formatBrlFromCents(amount)
+                ) : (
+                  <span className="text-sm font-normal text-muted-foreground">
+                    sug.{' '}
+                    {row.suggestedCents != null ? formatBrlFromCents(row.suggestedCents) : 'n/d'}
+                  </span>
+                )
+              }
+              badges={
+                <>
+                  <Badge variant="outline">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
+                  {overdue ? <Badge variant="destructive">atraso</Badge> : null}
+                </>
+              }
+              meta={
+                <>
+                  {row.dueOn ? `venc. ${formatIsoDateBr(row.dueOn)}` : 'sem vencimento'}
+                  {row.costCenterName ? ` · ${row.costCenterName}` : ''}
+                  {methodLabel !== '—' ? ` · ${methodLabel}` : ''}
+                </>
+              }
+              actions={
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy || !canSelect}
+                    onClick={() => setDialog({ rowId: row.id, intent: 'pay' })}
+                  >
+                    {actionVerb}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2"
+                    aria-label="Editar"
+                    disabled={busy}
+                    onClick={() => setDialog({ rowId: row.id, intent: 'edit' })}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                </>
+              }
+            />
+          );
+        })}
+      </MobileDataList>
+
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border border-input accent-primary"
+                  aria-label="Selecionar todas"
+                  checked={allSelectableChecked}
+                  disabled={selectableIds.length === 0 || busy}
+                  onChange={(event) => toggleAll(event.target.checked)}
+                />
+              </TableHead>
+              <TableHead>Vencimento</TableHead>
+              <TableHead>Descrição</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Centro</TableHead>
+              <TableHead>{isReceive ? 'Conta' : 'Forma'}</TableHead>
+              <TableHead className="text-right">Valor</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {optimisticRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                  {isReceive ? 'Nada a receber neste filtro.' : 'Nada a pagar neste filtro.'}
+                </TableCell>
+              </TableRow>
+            ) : (
+              optimisticRows.map((row) => {
+                const overdue = (row.dueOn ?? '') < today;
+                const canSelect = payAmountCents(row) != null;
+                const amount = row.amountCents;
+                const methodId = defaultPaymentMethodId(row, methods);
+                const method = methods.find((item) => item.id === methodId) ?? methods[0];
+                const methodLabel = method
+                  ? isReceive
+                    ? method.linkedAccountName?.trim() || method.label
+                    : method.label
+                  : '—';
+
+                return (
+                  <TableRow key={row.id} data-state={selected.has(row.id) ? 'selected' : undefined}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border border-input accent-primary"
+                        aria-label={`Selecionar ${row.description ?? 'conta'}`}
+                        checked={selected.has(row.id)}
+                        disabled={!canSelect || busy}
+                        title={canSelect ? undefined : 'Defina um valor antes de selecionar'}
+                        onChange={(event) => toggleOne(row.id, event.target.checked)}
+                      />
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      <span className={overdue ? 'text-destructive' : undefined}>
+                        {row.dueOn ? formatIsoDateBr(row.dueOn) : '—'}
                       </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={busy || !canSelect}
-                        onClick={() => setDialog({ rowId: row.id, intent: 'pay' })}
-                      >
-                        {actionVerb}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2"
-                        aria-label="Editar"
-                        disabled={busy}
-                        onClick={() => setDialog({ rowId: row.id, intent: 'edit' })}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
+                      {overdue ? (
+                        <Badge variant="destructive" className="ml-2">
+                          atraso
+                        </Badge>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-medium">{row.description ?? 'Sem descrição'}</p>
+                      <p className="text-xs text-muted-foreground">{row.categoryName}</p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
+                    </TableCell>
+                    <TableCell>{row.costCenterName}</TableCell>
+                    <TableCell className="max-w-[14rem] truncate text-muted-foreground">
+                      {methodLabel}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {amount != null ? (
+                        formatBrlFromCents(amount)
+                      ) : (
+                        <span className="text-muted-foreground">
+                          — · sugestão{' '}
+                          {row.suggestedCents != null
+                            ? formatBrlFromCents(row.suggestedCents)
+                            : 'n/d'}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy || !canSelect}
+                          onClick={() => setDialog({ rowId: row.id, intent: 'pay' })}
+                        >
+                          {actionVerb}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2"
+                          aria-label="Editar"
+                          disabled={busy}
+                          onClick={() => setDialog({ rowId: row.id, intent: 'edit' })}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {activeRow && dialog ? (
         <PayableRowDialog

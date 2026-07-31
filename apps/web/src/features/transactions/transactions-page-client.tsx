@@ -6,6 +6,7 @@ import { formatBrlFromCents, formatIsoDateBr, transactionStatusLabel } from '@ti
 import dynamic from 'next/dynamic';
 import { ExtratoFilters } from '@/components/extrato-filters';
 import { NewTransactionSheet } from '@/components/new-transaction-sheet';
+import { MobileDataCard, MobileDataEmpty, MobileDataList } from '@/components/mobile-data-list';
 import { PageHeader } from '@/components/page-header';
 import { QueryBoundary } from '@/components/query-boundary';
 import { TablePageSkeleton } from '@/components/page-skeletons';
@@ -101,7 +102,82 @@ function TransactionsContent({ data }: { data: TransactionsResponse }): React.Re
             {totals.truncated ? ` · ${rows.length} de ${totals.totalCount}` : null}
           </p>
         </div>
-        <div className="overflow-x-auto">
+
+        <MobileDataList
+          className="py-4"
+          empty={
+            rows.length === 0 ? (
+              <MobileDataEmpty>
+                Nenhum movimento neste filtro. Use <span className="font-medium">Novo</span> para
+                registrar.
+              </MobileDataEmpty>
+            ) : undefined
+          }
+        >
+          {rows.map((row) => {
+            const dateKind =
+              row.displayDateKind === 'receipt'
+                ? 'recebimento'
+                : row.displayDateKind === 'payment'
+                  ? 'pagamento'
+                  : 'vencimento';
+
+            return (
+              <MobileDataCard
+                key={`m-${row.id}`}
+                title={row.description || row.categoryName || 'Lançamento'}
+                subtitle={`${row.categoryName}${row.costCenterName ? ` · ${row.costCenterName}` : ''}`}
+                amount={
+                  row.amountCents == null ? (
+                    '—'
+                  ) : (
+                    <>
+                      {row.type === 'income' ? '+' : '−'}
+                      {formatBrlFromCents(row.amountCents)}
+                    </>
+                  )
+                }
+                amountTone={
+                  row.amountCents == null ? 'muted' : row.type === 'income' ? 'income' : 'expense'
+                }
+                badges={
+                  <>
+                    <Badge variant="outline">{row.type === 'income' ? 'Receita' : 'Despesa'}</Badge>
+                    <Badge variant={row.status === 'pending' ? 'secondary' : 'outline'}>
+                      {transactionStatusLabel(row.type, row.status)}
+                    </Badge>
+                  </>
+                }
+                meta={`${formatIsoDateBr(row.displayDate)} · ${dateKind}`}
+                actions={
+                  canEdit ? (
+                    <EditTransactionDialog
+                      transaction={{
+                        id: row.id,
+                        type: row.type,
+                        status: row.status,
+                        amountCents: row.amountCents,
+                        occurredOn: row.occurredOn,
+                        dueOn: row.dueOn,
+                        paidOn: row.paidOn,
+                        description: row.description,
+                        costCenterId: row.costCenterId,
+                        categoryId: row.categoryId,
+                        accountId: row.accountId,
+                        installmentId: row.installmentId,
+                      }}
+                      centers={lookups.centers}
+                      categories={lookups.categories}
+                      accounts={lookups.accounts}
+                    />
+                  ) : null
+                }
+              />
+            );
+          })}
+        </MobileDataList>
+
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>

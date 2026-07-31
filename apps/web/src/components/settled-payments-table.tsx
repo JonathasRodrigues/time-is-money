@@ -6,6 +6,7 @@ import {
   PAYABLE_KIND_LABEL,
   type PayableKind,
 } from '@tim/domain';
+import { MobileDataCard, MobileDataEmpty, MobileDataList } from '@/components/mobile-data-list';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -43,57 +44,81 @@ export function SettledPaymentsTable({
     : 'Nenhum pagamento neste período.';
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Descrição</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead>{dateLabel}</TableHead>
-            <TableHead>{isReceive ? 'Conta' : 'Forma'}</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
+    <>
+      <MobileDataList
+        empty={rows.length === 0 ? <MobileDataEmpty>{emptyLabel}</MobileDataEmpty> : undefined}
+      >
+        {rows.map((row) => (
+          <MobileDataCard
+            key={`m-${row.id}`}
+            title={row.description?.trim() || row.categoryName}
+            subtitle={row.costCenterName}
+            amount={formatBrlFromCents(row.amountCents)}
+            badges={<Badge variant="secondary">{PAYABLE_KIND_LABEL[row.kind]}</Badge>}
+            meta={
+              <>
+                {row.paidOn ? `${dateLabel.toLowerCase()} ${formatIsoDateBr(row.paidOn)}` : '—'}
+                {row.dueOn ? ` · venc. ${formatIsoDateBr(row.dueOn)}` : ''}
+                {` · ${isReceive ? row.accountName : row.paymentMethodLabel}`}
+              </>
+            }
+            footer={<span className="text-muted-foreground">{row.categoryName}</span>}
+          />
+        ))}
+      </MobileDataList>
+
+      <div className="hidden overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                {emptyLabel}
-              </TableCell>
+              <TableHead>Descrição</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Categoria</TableHead>
+              <TableHead>{dateLabel}</TableHead>
+              <TableHead>{isReceive ? 'Conta' : 'Forma'}</TableHead>
+              <TableHead className="text-right">Valor</TableHead>
             </TableRow>
-          ) : (
-            rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">
-                      {row.description?.trim() || row.categoryName}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {row.costCenterName}
-                      {row.dueOn ? ` · venc. ${formatIsoDateBr(row.dueOn)}` : ''}
-                    </p>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{row.categoryName}</TableCell>
-                <TableCell className="tabular-nums text-muted-foreground">
-                  {row.paidOn ? formatIsoDateBr(row.paidOn) : '—'}
-                </TableCell>
-                <TableCell className="max-w-[12rem] truncate text-muted-foreground">
-                  {isReceive ? row.accountName : row.paymentMethodLabel}
-                </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  {formatBrlFromCents(row.amountCents)}
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  {emptyLabel}
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            ) : (
+              rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {row.description?.trim() || row.categoryName}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.costCenterName}
+                        {row.dueOn ? ` · venc. ${formatIsoDateBr(row.dueOn)}` : ''}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{PAYABLE_KIND_LABEL[row.kind]}</Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{row.categoryName}</TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {row.paidOn ? formatIsoDateBr(row.paidOn) : '—'}
+                  </TableCell>
+                  <TableCell className="max-w-[12rem] truncate text-muted-foreground">
+                    {isReceive ? row.accountName : row.paymentMethodLabel}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {formatBrlFromCents(row.amountCents)}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
