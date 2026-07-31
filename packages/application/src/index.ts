@@ -13,7 +13,6 @@ import {
   financings,
   installments,
   institutions,
-  paymentMethods,
   planItems,
   planContributions,
   plans,
