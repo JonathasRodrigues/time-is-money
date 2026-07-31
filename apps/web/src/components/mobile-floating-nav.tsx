@@ -165,7 +165,7 @@ export function MobileFloatingNav({
       >
         <div
           className={cn(
-            'pointer-events-auto max-h-[min(58dvh,24rem)] overflow-y-auto rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_50px_-12px_rgb(15_28_46/0.55)] ring-1 ring-black/5 dark:shadow-[0_20px_50px_-12px_rgb(0_0_0/0.7)] dark:ring-white/10',
+            'pointer-events-auto max-h-[min(58dvh,24rem)] overflow-y-auto rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_50px_-12px_rgb(0_0_0/0.35)] ring-1 ring-black/5 dark:shadow-[0_20px_50px_-12px_rgb(0_0_0/0.7)] dark:ring-white/10',
             open && 'animate-in fade-in-0 slide-in-from-bottom-2 duration-300',
           )}
         >
@@ -269,7 +269,7 @@ export function MobileFloatingNav({
         aria-label="Navegação principal"
         className="pointer-events-auto relative z-50 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5"
       >
-        <div className="mx-auto flex max-w-sm items-end gap-0.5 rounded-2xl border border-border bg-popover px-1 py-1 text-popover-foreground shadow-[0_10px_28px_-10px_rgb(15_28_46/0.45)] ring-1 ring-black/5 dark:ring-white/10">
+        <div className="mx-auto flex max-w-sm items-end gap-0.5 rounded-2xl border border-border bg-popover px-1 py-1 text-popover-foreground shadow-[0_10px_28px_-10px_rgb(0_0_0/0.3)] ring-1 ring-black/5 dark:ring-white/10">
           {mobileDockNav.slice(0, 2).map((item) => (
             <NavIconLink
               key={`${item.href}:${item.paymentsFlow ?? 'default'}`}
