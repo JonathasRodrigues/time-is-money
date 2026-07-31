@@ -72,12 +72,35 @@ export function PaymentsTable({
   categories?: Array<{ id: string; name: string }>;
 }): React.ReactElement {
   const methods = useMemo((): PaymentMethodOption[] => {
+    const fromApi = paymentMethods ?? [];
+    const accountFromApi = fromApi.filter((method) => method.type === 'account');
+
+    // Fallback: sintetiza PIX/débito/TED/boleto por conta se o lookup ainda não veio.
+    const accountRailsFallback = (): PaymentMethodOption[] =>
+      accounts.flatMap((account) =>
+        (['pix', 'debit', 'ted', 'boleto'] as const).map((rail) => ({
+          id: `account:${account.id}:${rail}`,
+          type: 'account' as const,
+          accountId: account.id,
+          creditCardId: null,
+          paymentRail: rail,
+          linkedAccountName: account.name,
+          linkedInstitutionName: null,
+          balanceCents: null,
+          label: `${
+            rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'
+          } · ${account.name}`,
+        })),
+      );
+
     if (mode === 'receive') {
-      const accountMethods = (paymentMethods ?? []).filter((method) => method.type === 'account');
+      const accountMethods = accountFromApi.length > 0 ? accountFromApi : accountRailsFallback();
       return uniqueAccountMethods(accountMethods);
     }
-    return paymentMethods ?? [];
-  }, [paymentMethods, mode]);
+
+    if (fromApi.length > 0) return fromApi;
+    return accountRailsFallback();
+  }, [paymentMethods, accounts, mode]);
 
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [applyAllDate, setApplyAllDate] = useState('');

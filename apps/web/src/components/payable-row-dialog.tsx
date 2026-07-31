@@ -41,13 +41,16 @@ import { toast } from 'sonner';
 
 export type PayableDialogIntent = 'pay' | 'edit';
 
-function defaultMethodId(row: PayableRow, methods: PaymentMethodOption[]): string {
-  return defaultPaymentMethodId(row, methods);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function persistablePaymentMethodId(id: string | undefined): string | null {
+  if (!id || !UUID_RE.test(id)) return null;
+  return id;
 }
 
 /**
  * Modal padrão: Pagar/Receber (intent pay) ou Editar (dados + quitar).
- * Alinha com financiamentos (ação abre dialog) e extrato (lápis = edit).
+ * Em Contas a pagar, o seletor é sempre forma de pagamento (agrupada por conta) — nunca só conta.
  */
 export function PayableRowDialog({
   open,
@@ -79,14 +82,27 @@ export function PayableRowDialog({
   const actionPast = isInvoice ? 'Fatura quitada' : isReceive ? 'Recebido' : 'Pago';
   const dateLabel = isReceive ? 'Recebido em' : 'Pago em';
 
-  const methods = useMemo((): PaymentMethodOption[] => {
-    const accountOnly = paymentMethods.filter((method) => method.type === 'account');
-    // Contas a receber: só conta (sem PIX/débito/TED).
-    if (isReceive) return uniqueAccountMethods(accountOnly);
-    // Quitar fatura: formas na conta (PIX/débito/TED), não só o nome da conta.
-    if (isInvoice) return accountOnly;
+  const accountMethods = useMemo(
+    () => paymentMethods.filter((method) => method.type === 'account'),
+    [paymentMethods],
+  );
+  const cardMethods = useMemo(
+    () => paymentMethods.filter((method) => method.type === 'credit_card'),
+    [paymentMethods],
+  );
+
+  /** Pendência / edição: só formas na conta (PIX/débito/TED/boleto), agrupadas por conta. */
+  const plannedMethods = useMemo((): PaymentMethodOption[] => {
+    if (isReceive) return uniqueAccountMethods(accountMethods);
+    return accountMethods;
+  }, [accountMethods, isReceive]);
+
+  /** Quitação: receber = conta; fatura = formas na conta; pagar = formas + cartão. */
+  const settleMethods = useMemo((): PaymentMethodOption[] => {
+    if (isReceive) return uniqueAccountMethods(accountMethods);
+    if (isInvoice) return accountMethods;
     return paymentMethods;
-  }, [paymentMethods, isReceive, isInvoice]);
+  }, [accountMethods, paymentMethods, isReceive, isInvoice]);
 
   const [pending, startTransition] = useTransition();
   const { run, beginToast } = useMutationFeedback();
@@ -99,7 +115,12 @@ export function PayableRowDialog({
   const [costCenterId, setCostCenterId] = useState(row.costCenterId ?? centers[0]?.id ?? '');
   const [categoryId, setCategoryId] = useState(row.categoryId ?? categories[0]?.id ?? '');
   const [paidOn, setPaidOn] = useState(row.dueOn ?? today);
-  const [methodId, setMethodId] = useState(() => defaultMethodId(row, methods));
+  const [plannedMethodId, setPlannedMethodId] = useState(() =>
+    defaultPaymentMethodId(row, plannedMethods),
+  );
+  const [settleMethodId, setSettleMethodId] = useState(() =>
+    defaultPaymentMethodId(row, settleMethods),
+  );
   const [payAmount, setPayAmount] = useState(() => {
     const cents = payAmountCents(row);
     return cents != null ? formatCentsForBrInput(cents) : '';
@@ -113,15 +134,18 @@ export function PayableRowDialog({
     setCostCenterId(row.costCenterId ?? centers[0]?.id ?? '');
     setCategoryId(row.categoryId ?? categories[0]?.id ?? '');
     setPaidOn(row.dueOn ?? today);
-    setMethodId(defaultMethodId(row, methods));
+    setPlannedMethodId(defaultPaymentMethodId(row, plannedMethods));
+    setSettleMethodId(defaultPaymentMethodId(row, settleMethods));
     const cents = payAmountCents(row);
     setPayAmount(cents != null ? formatCentsForBrInput(cents) : '');
-  }, [open, row, today, centers, categories, methods]);
+  }, [open, row, today, centers, categories, plannedMethods, settleMethods]);
 
-  const method = methods.find((item) => item.id === methodId) ?? methods[0];
+  const plannedMethod =
+    plannedMethods.find((item) => item.id === plannedMethodId) ?? plannedMethods[0];
+  const settleMethod = settleMethods.find((item) => item.id === settleMethodId) ?? settleMethods[0];
   const amountCents = parseBrlToCents(normalizeMoneyFormValue(payAmount)) ?? payAmountCents(row);
-  const lacksBalance = methodLacksBalance(method, amountCents, { isReceive });
-  const payWithCard = method?.type === 'credit_card';
+  const lacksBalance = methodLacksBalance(settleMethod, amountCents, { isReceive });
+  const payWithCard = settleMethod?.type === 'credit_card';
 
   function buildPayFormData(): FormData {
     const formData = new FormData();
@@ -131,22 +155,24 @@ export function PayableRowDialog({
     if (isInvoice && row.creditCardId) {
       formData.set('creditCardId', row.creditCardId);
     }
-    if (payWithCard && method?.creditCardId) {
-      formData.set('creditCardId', method.creditCardId);
+    if (payWithCard && settleMethod?.creditCardId) {
+      formData.set('creditCardId', settleMethod.creditCardId);
     } else {
-      formData.set('accountId', method?.accountId ?? row.accountId);
-      formData.set('paymentAccountId', method?.accountId ?? row.accountId);
-      formData.set('paymentRail', method?.paymentRail ?? 'pix');
+      formData.set('accountId', settleMethod?.accountId ?? row.accountId);
+      formData.set('paymentAccountId', settleMethod?.accountId ?? row.accountId);
+      formData.set('paymentRail', settleMethod?.paymentRail ?? 'pix');
       formData.set('applyToBalance', 'on');
+      const methodId = persistablePaymentMethodId(settleMethod?.id);
+      if (methodId) formData.set('paymentMethodId', methodId);
     }
     return formData;
   }
 
-  function appendPaymentMethodFields(formData: FormData): void {
-    // Pendente: só forma na conta (rail). Cartão é escolhido na quitação.
-    formData.set('accountId', method?.accountId ?? row.accountId);
-    formData.set('paymentRail', method?.paymentRail ?? 'pix');
-    if (method?.id) formData.set('paymentMethodId', method.id);
+  function appendPlannedPaymentMethodFields(formData: FormData): void {
+    formData.set('accountId', plannedMethod?.accountId ?? row.accountId);
+    formData.set('paymentRail', plannedMethod?.paymentRail ?? 'pix');
+    const methodId = persistablePaymentMethodId(plannedMethod?.id);
+    if (methodId) formData.set('paymentMethodId', methodId);
     formData.set('creditCardId', '');
   }
 
@@ -161,7 +187,7 @@ export function PayableRowDialog({
     formData.set('amount', editAmount);
     formData.set('costCenterId', costCenterId);
     formData.set('categoryId', categoryId);
-    appendPaymentMethodFields(formData);
+    appendPlannedPaymentMethodFields(formData);
 
     startTransition(async () => {
       try {
@@ -182,11 +208,11 @@ export function PayableRowDialog({
       toast.error('Informe um valor válido.');
       return;
     }
-    if (methodLacksBalance(method, amountCents, { isReceive })) {
+    if (methodLacksBalance(settleMethod, amountCents, { isReceive })) {
       toast.error(
         `Saldo insuficiente${
-          method?.balanceCents != null
-            ? ` (disponível ${formatBrlFromCents(method.balanceCents)})`
+          settleMethod?.balanceCents != null
+            ? ` (disponível ${formatBrlFromCents(settleMethod.balanceCents)})`
             : ''
         }.`,
       );
@@ -213,7 +239,7 @@ export function PayableRowDialog({
           editForm.set('amount', editAmount || payAmount);
           editForm.set('costCenterId', costCenterId);
           editForm.set('categoryId', categoryId);
-          appendPaymentMethodFields(editForm);
+          appendPlannedPaymentMethodFields(editForm);
           await updateTransactionAction(editForm);
         }
 
@@ -240,7 +266,7 @@ export function PayableRowDialog({
     intent === 'edit'
       ? isReceive
         ? 'Editar receita'
-        : 'Editar conta'
+        : 'Editar conta a pagar'
       : isInvoice
         ? 'Quitar fatura'
         : isReceive
@@ -255,7 +281,7 @@ export function PayableRowDialog({
           <DialogDescription>
             {intent === 'edit'
               ? `Ajuste os dados e, se quiser, ${isReceive ? 'receba' : 'pague'} por aqui.`
-              : `Confirme data, ${isReceive ? 'conta' : 'forma'} e valor.`}
+              : `Confirme data, ${isReceive ? 'conta' : 'forma de pagamento'} e valor.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -330,19 +356,26 @@ export function PayableRowDialog({
                 <select
                   id={`payable-planned-method-${row.id}`}
                   className={nativeSelectClassName}
-                  value={method?.id ?? methodId}
-                  onChange={(event) => setMethodId(event.target.value)}
-                  disabled={pending || methods.length === 0}
+                  value={plannedMethod?.id ?? plannedMethodId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    setPlannedMethodId(nextId);
+                    // Mantém quitação alinhada quando a forma planejada é na conta.
+                    if (settleMethods.some((item) => item.id === nextId)) {
+                      setSettleMethodId(nextId);
+                    }
+                  }}
+                  disabled={pending || plannedMethods.length === 0}
                 >
                   {isReceive ? (
-                    methods.map((item) => (
+                    plannedMethods.map((item) => (
                       <option key={item.id} value={item.id}>
                         {receiveAccountSelectLabel(item)}
                       </option>
                     ))
                   ) : (
                     <PaymentMethodSelectGroups
-                      accountMethods={methods.filter((item) => item.type === 'account')}
+                      accountMethods={plannedMethods}
                       cardMethods={[]}
                       showCards={false}
                     />
@@ -351,7 +384,7 @@ export function PayableRowDialog({
                 <p className="text-xs text-muted-foreground">
                   {isReceive
                     ? 'Conta onde o valor deve entrar.'
-                    : 'Sugestão para a quitação (PIX, débito, TED…). Cartão só na hora de pagar.'}
+                    : 'PIX, débito, TED ou boleto — agrupados por conta. Cartão só na hora de pagar.'}
                 </p>
               </div>
               <div className="border-t pt-3">
@@ -380,34 +413,37 @@ export function PayableRowDialog({
             />
           </div>
 
-          {showEdit ? null : (
-            <div className="grid gap-1.5">
-              <Label htmlFor={`payable-method-${row.id}`}>
-                {isReceive ? 'Conta' : isInvoice ? 'Como quitar o cartão' : 'Forma de pagamento'}
-              </Label>
-              <select
-                id={`payable-method-${row.id}`}
-                className={nativeSelectClassName}
-                value={method?.id ?? methodId}
-                onChange={(event) => setMethodId(event.target.value)}
-                disabled={pending || methods.length === 0}
-              >
-                {isReceive ? (
-                  methods.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {receiveAccountSelectLabel(item)}
-                    </option>
-                  ))
-                ) : (
-                  <PaymentMethodSelectGroups
-                    accountMethods={methods.filter((item) => item.type === 'account')}
-                    cardMethods={methods.filter((item) => item.type === 'credit_card')}
-                    showCards={!isInvoice}
-                  />
-                )}
-              </select>
-            </div>
-          )}
+          <div className="grid gap-1.5">
+            <Label htmlFor={`payable-method-${row.id}`}>
+              {isReceive ? 'Conta' : isInvoice ? 'Como quitar o cartão' : 'Forma de pagamento'}
+            </Label>
+            <select
+              id={`payable-method-${row.id}`}
+              className={nativeSelectClassName}
+              value={settleMethod?.id ?? settleMethodId}
+              onChange={(event) => setSettleMethodId(event.target.value)}
+              disabled={pending || settleMethods.length === 0}
+            >
+              {isReceive ? (
+                settleMethods.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {receiveAccountSelectLabel(item)}
+                  </option>
+                ))
+              ) : (
+                <PaymentMethodSelectGroups
+                  accountMethods={accountMethods}
+                  cardMethods={cardMethods}
+                  showCards={!isInvoice}
+                />
+              )}
+            </select>
+            {showEdit && !isReceive ? (
+              <p className="text-xs text-muted-foreground">
+                Forma usada nesta quitação (pode diferir da prevista acima).
+              </p>
+            ) : null}
+          </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor={`payable-pay-amount-${row.id}`}>Valor (R$)</Label>
@@ -423,8 +459,8 @@ export function PayableRowDialog({
           {lacksBalance ? (
             <p className="text-xs text-destructive">
               Saldo insuficiente
-              {method?.balanceCents != null
-                ? ` (disponível ${formatBrlFromCents(method.balanceCents)})`
+              {settleMethod?.balanceCents != null
+                ? ` (disponível ${formatBrlFromCents(settleMethod.balanceCents)})`
                 : ''}
               .
             </p>
