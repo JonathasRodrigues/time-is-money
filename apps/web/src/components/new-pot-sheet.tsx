@@ -30,6 +30,7 @@ export function NewPotSheet({
   institutionId,
   triggerLabel = 'Reserva',
   compact = false,
+  iconOnly = false,
 }: {
   parentAccountId: string;
   parentAccountName: string;
@@ -37,15 +38,27 @@ export function NewPotSheet({
   institutionId?: string | null;
   triggerLabel?: string;
   compact?: boolean;
+  /** Só ícone — ideal em linhas densas no mobile. */
+  iconOnly?: boolean;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button" size="sm" variant="ghost">
-          {compact ? <Plus className="size-3.5" /> : <PiggyBank className="size-3.5" />}
-          {triggerLabel}
+        <Button
+          type="button"
+          size={iconOnly ? 'icon-sm' : 'sm'}
+          variant="ghost"
+          title={iconOnly ? triggerLabel : undefined}
+          aria-label={iconOnly ? triggerLabel : undefined}
+        >
+          {compact && !iconOnly ? (
+            <Plus className="size-3.5" />
+          ) : (
+            <PiggyBank className="size-3.5" />
+          )}
+          {iconOnly ? null : triggerLabel}
         </Button>
       </SheetTrigger>
       <SheetContent className="flex flex-col gap-6 overflow-y-auto sm:max-w-md">

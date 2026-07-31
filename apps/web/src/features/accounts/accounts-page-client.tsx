@@ -74,7 +74,7 @@ function PotTile({
   parentOptions: Lookups['parentOptions'];
 }): React.ReactElement {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-background to-background p-4 shadow-xs">
+    <div className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-background to-background p-3 shadow-xs sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
@@ -103,6 +103,7 @@ function PotTile({
           centers={centers}
           banks={banks}
           parentOptions={parentOptions}
+          iconOnly
         />
       </div>
       <p className="mt-auto text-lg font-semibold tabular-nums tracking-tight">
@@ -129,7 +130,7 @@ function CreditCardTile({
       : 0;
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-background to-background p-4 shadow-xs">
+    <div className="flex flex-col gap-3 rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-background to-background p-3 shadow-xs sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
@@ -258,7 +259,7 @@ function BankInstitutionCard({
 
   return (
     <Card className="gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="gap-4 border-b bg-muted/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <CardHeader className="gap-3 border-b bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
         <div className="flex min-w-0 items-start gap-3">
           <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center">
             {isBank ? (
@@ -271,7 +272,9 @@ function BankInstitutionCard({
           </div>
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-1">
-              <CardTitle className="truncate text-lg tracking-tight">{section.title}</CardTitle>
+              <CardTitle className="truncate text-base tracking-tight sm:text-lg">
+                {section.title}
+              </CardTitle>
               {section.institutionId ? (
                 <EditInstitutionRow institutionId={section.institutionId} name={section.title} />
               ) : null}
@@ -317,7 +320,7 @@ function BankInstitutionCard({
         </div>
       </CardHeader>
 
-      <CardContent className="grid gap-6 p-5">
+      <CardContent className="grid gap-5 p-4 sm:gap-6 sm:p-5">
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -342,8 +345,8 @@ function BankInstitutionCard({
 
                 return (
                   <div key={root.id} className="overflow-hidden rounded-xl border">
-                    <div className="flex items-center justify-between gap-3 px-4 py-3">
-                      <div className="min-w-0 space-y-0.5">
+                    <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
+                      <div className="min-w-0 flex-1 space-y-0.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="truncate font-medium">{root.name}</span>
                           <Badge variant="outline" className="font-normal">
@@ -358,54 +361,57 @@ function BankInstitutionCard({
                             : ''}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                        <span className="mr-1 tabular-nums text-sm font-semibold tracking-tight sm:mr-2">
+                      <div className="flex items-center justify-between gap-2 sm:justify-end">
+                        <span className="tabular-nums text-base font-semibold tracking-tight sm:mr-1 sm:text-sm">
                           {formatBrlFromCents(root.balanceCents)}
                         </span>
-                        {canHoldExtras && isBank && root.institutionId ? (
-                          <NewCreditCardSheet
+                        <div className="flex shrink-0 items-center gap-1">
+                          {canHoldExtras && isBank && root.institutionId ? (
+                            <NewCreditCardSheet
+                              banks={banks}
+                              paymentAccountOptions={paymentAccounts}
+                              boundInstitutionId={root.institutionId}
+                              boundInstitutionName={section.title}
+                              boundPaymentAccountId={root.id}
+                              boundPaymentAccountName={root.name}
+                              triggerLabel="Cartão"
+                              triggerVariant="ghost"
+                              iconOnly
+                            />
+                          ) : null}
+                          {canHoldExtras ? (
+                            <NewPotSheet
+                              parentAccountId={root.id}
+                              parentAccountName={root.name}
+                              costCenterId={root.costCenterId}
+                              institutionId={root.institutionId}
+                              triggerLabel="Reserva"
+                              iconOnly
+                            />
+                          ) : null}
+                          <EditAccountDialog
+                            account={{
+                              id: root.id,
+                              name: root.name,
+                              kind: root.kind as AccountKind,
+                              costCenterId: root.costCenterId,
+                              institutionId: root.institutionId,
+                              parentAccountId: root.parentAccountId,
+                              balanceCents: root.balanceCents,
+                              yieldType: root.yieldType as YieldType,
+                              yieldBps: root.yieldBps,
+                            }}
+                            centers={centers}
                             banks={banks}
-                            paymentAccountOptions={paymentAccounts}
-                            boundInstitutionId={root.institutionId}
-                            boundInstitutionName={section.title}
-                            boundPaymentAccountId={root.id}
-                            boundPaymentAccountName={root.name}
-                            triggerLabel="Cartão"
-                            triggerVariant="ghost"
-                            compact
+                            parentOptions={parents}
+                            iconOnly
                           />
-                        ) : null}
-                        {canHoldExtras ? (
-                          <NewPotSheet
-                            parentAccountId={root.id}
-                            parentAccountName={root.name}
-                            costCenterId={root.costCenterId}
-                            institutionId={root.institutionId}
-                            triggerLabel="Reserva"
-                            compact
-                          />
-                        ) : null}
-                        <EditAccountDialog
-                          account={{
-                            id: root.id,
-                            name: root.name,
-                            kind: root.kind as AccountKind,
-                            costCenterId: root.costCenterId,
-                            institutionId: root.institutionId,
-                            parentAccountId: root.parentAccountId,
-                            balanceCents: root.balanceCents,
-                            yieldType: root.yieldType as YieldType,
-                            yieldBps: root.yieldBps,
-                          }}
-                          centers={centers}
-                          banks={banks}
-                          parentOptions={parents}
-                        />
+                        </div>
                       </div>
                     </div>
 
                     {accountCards.length > 0 ? (
-                      <div className="border-t bg-muted/10 px-4 py-3">
+                      <div className="border-t bg-muted/10 px-3 py-3 sm:px-4">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                             Cartões desta conta
@@ -428,7 +434,7 @@ function BankInstitutionCard({
                     ) : null}
 
                     {pots.length > 0 ? (
-                      <div className="border-t bg-muted/15 px-4 py-3">
+                      <div className="border-t bg-muted/15 px-3 py-3 sm:px-4">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                             Reservas / caixinhas

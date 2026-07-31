@@ -31,6 +31,7 @@ export function EditAccountDialog({
   centers,
   banks,
   parentOptions,
+  iconOnly = false,
 }: {
   account: {
     id: string;
@@ -46,6 +47,7 @@ export function EditAccountDialog({
   centers: Option[];
   banks: Option[];
   parentOptions: Option[];
+  iconOnly?: boolean;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
   const yieldValue =
@@ -56,9 +58,15 @@ export function EditAccountDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="outline">
+        <Button
+          type="button"
+          size={iconOnly ? 'icon-sm' : 'sm'}
+          variant="outline"
+          title={iconOnly ? 'Editar' : undefined}
+          aria-label={iconOnly ? 'Editar conta' : undefined}
+        >
           <Pencil className="size-3.5" />
-          Editar
+          {iconOnly ? null : 'Editar'}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">

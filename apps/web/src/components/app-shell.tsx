@@ -146,7 +146,7 @@ function AppShellFallback({
           <p className="truncate text-sm font-medium">{titleFromPath(pathname)}</p>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-28 md:px-8 md:pb-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-24 md:px-8 md:pb-6">
         {children}
       </div>
     </SidebarInset>
@@ -349,7 +349,7 @@ function AppShellFrame({
           <JarvisDock ttsEnabled={ttsEnabled} />
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pb-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pb-6">
           {children}
         </div>
       </SidebarInset>

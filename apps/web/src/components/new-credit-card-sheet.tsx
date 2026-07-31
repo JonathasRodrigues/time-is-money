@@ -37,6 +37,7 @@ export function NewCreditCardSheet({
   triggerLabel = 'Novo cartão',
   triggerVariant = 'default',
   compact = false,
+  iconOnly = false,
 }: {
   banks: Option[];
   paymentAccountOptions: Option[];
@@ -51,6 +52,8 @@ export function NewCreditCardSheet({
   triggerLabel?: string;
   triggerVariant?: 'default' | 'outline' | 'secondary' | 'ghost';
   compact?: boolean;
+  /** Só ícone — ideal em linhas densas no mobile. */
+  iconOnly?: boolean;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [cardMode, setCardMode] = useState<CardMode>('both');
@@ -70,13 +73,18 @@ export function NewCreditCardSheet({
       <SheetTrigger asChild>
         <Button
           type="button"
-          size="sm"
+          size={iconOnly ? 'icon-sm' : 'sm'}
           variant={triggerVariant}
           disabled={disabled}
-          title={disabledReason}
+          title={disabledReason ?? (iconOnly ? triggerLabel : undefined)}
+          aria-label={iconOnly ? triggerLabel : undefined}
         >
-          {compact ? <Plus className="size-3.5" /> : <CreditCard className="size-3.5" />}
-          {triggerLabel}
+          {compact && !iconOnly ? (
+            <Plus className="size-3.5" />
+          ) : (
+            <CreditCard className="size-3.5" />
+          )}
+          {iconOnly ? null : triggerLabel}
         </Button>
       </SheetTrigger>
       <SheetContent className="flex flex-col gap-6 overflow-y-auto sm:max-w-md">
