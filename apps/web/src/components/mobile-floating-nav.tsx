@@ -81,15 +81,15 @@ function NavIconLink({
       aria-current={active ? 'page' : undefined}
       className={cn(
         'flex flex-col items-center gap-1.5 rounded-xl px-1.5 py-2 text-center transition-colors',
-        active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/80 active:bg-muted',
+        active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted active:bg-muted',
       )}
     >
       <span
         className={cn(
-          'flex size-9 items-center justify-center rounded-xl shadow-sm transition-colors',
+          'flex size-9 items-center justify-center rounded-xl transition-colors',
           active
-            ? 'bg-primary text-primary-foreground shadow-primary/25'
-            : 'bg-card text-foreground ring-1 ring-border/60',
+            ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+            : 'bg-muted text-foreground',
         )}
       >
         <Icon className="size-4" aria-hidden />
@@ -147,14 +147,14 @@ export function MobileFloatingNav({
         <button
           type="button"
           aria-label="Fechar menu"
-          className="pointer-events-auto absolute inset-0 bg-background/55 backdrop-blur-[2px] transition-opacity animate-in fade-in-0"
+          className="pointer-events-auto fixed inset-0 z-40 bg-black/50 backdrop-blur-[3px] transition-opacity animate-in fade-in-0 dark:bg-black/65"
           onClick={close}
         />
       ) : null}
 
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] px-3 transition-all duration-300',
+          'pointer-events-none absolute inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-50 px-3 transition-all duration-300',
           open ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0',
         )}
         id={panelId}
@@ -165,7 +165,7 @@ export function MobileFloatingNav({
       >
         <div
           className={cn(
-            'pointer-events-auto max-h-[min(58dvh,24rem)] overflow-y-auto rounded-2xl border border-border/70 bg-card/95 p-3 shadow-[0_14px_40px_-16px_rgb(15_28_46/0.4)] backdrop-blur-xl',
+            'pointer-events-auto max-h-[min(58dvh,24rem)] overflow-y-auto rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_50px_-12px_rgb(15_28_46/0.55)] ring-1 ring-black/5 dark:shadow-[0_20px_50px_-12px_rgb(0_0_0/0.7)] dark:ring-white/10',
             open && 'animate-in fade-in-0 slide-in-from-bottom-2 duration-300',
           )}
         >
@@ -218,12 +218,12 @@ export function MobileFloatingNav({
           </div>
 
           <div className="mt-3 space-y-1.5">
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/60 px-2.5 py-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-muted px-2.5 py-2">
               <p className="text-xs font-medium">Aparência</p>
               <ThemeToggle />
             </div>
 
-            <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-background/80 p-2">
+            <div className="flex items-center gap-2.5 rounded-xl border border-border bg-background p-2">
               {useClerkAccount ? (
                 <UserButton
                   afterSignOutUrl="/"
@@ -267,9 +267,9 @@ export function MobileFloatingNav({
 
       <nav
         aria-label="Navegação principal"
-        className="pointer-events-auto px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5"
+        className="pointer-events-auto relative z-50 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5"
       >
-        <div className="mx-auto flex max-w-sm items-end gap-0.5 rounded-2xl border border-border/60 bg-card/95 px-1 py-1 shadow-[0_10px_28px_-12px_rgb(15_28_46/0.35)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-sm items-end gap-0.5 rounded-2xl border border-border bg-popover px-1 py-1 text-popover-foreground shadow-[0_10px_28px_-10px_rgb(15_28_46/0.45)] ring-1 ring-black/5 dark:ring-white/10">
           {mobileDockNav.slice(0, 2).map((item) => (
             <NavIconLink
               key={`${item.href}:${item.paymentsFlow ?? 'default'}`}
