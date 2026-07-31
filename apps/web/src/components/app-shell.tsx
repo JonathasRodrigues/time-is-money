@@ -4,22 +4,19 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { UserButton } from '@clerk/nextjs';
+import { SlidersHorizontal, Users } from 'lucide-react';
 import {
-  ArrowLeftRight,
-  Building2,
-  FolderTree,
-  HandCoins,
-  Landmark,
-  LayoutDashboard,
-  PiggyBank,
-  SlidersHorizontal,
-  Target,
-  Upload,
-  Users,
-  Wallet,
-} from 'lucide-react';
+  buildSystemNav,
+  cadastrosNav,
+  isActivePath,
+  paymentsNavHref,
+  primaryNav,
+  titleFromPath,
+  type SystemNavItem,
+} from '@/components/app-nav';
 import { JarvisDock } from '@/components/jarvis-dock';
 import { BrandLogo } from '@/components/brand-logo';
+import { MobileFloatingNav } from '@/components/mobile-floating-nav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { NavigatingProvider } from '@/components/navigating';
 import { PwaInstallPrompt } from '@/components/pwa-install-prompt';
@@ -51,91 +48,6 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-
-type PrimaryNavItem = {
-  href: string;
-  label: string;
-  icon: typeof Wallet;
-  /** Fluxo em /payments — itens irmãos, não aba da outra tela. */
-  paymentsFlow?: 'pay' | 'receive';
-};
-
-const primaryNav: PrimaryNavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/payments', label: 'Contas a pagar', icon: Wallet, paymentsFlow: 'pay' },
-  { href: '/payments', label: 'Contas a receber', icon: HandCoins, paymentsFlow: 'receive' },
-  { href: '/wealth', label: 'Patrimônio', icon: Landmark },
-  { href: '/transactions', label: 'Extrato', icon: ArrowLeftRight },
-  { href: '/financings', label: 'Financiamentos', icon: PiggyBank },
-  { href: '/planning', label: 'Planejamento', icon: Target },
-];
-
-const cadastrosNav = [
-  { href: '/cadastros/accounts', label: 'Bancos e contas', icon: Landmark },
-  { href: '/cadastros/categories', label: 'Categorias', icon: FolderTree },
-  { href: '/cadastros/cost-centers', label: 'Centros de custo', icon: Building2 },
-] as const;
-
-type SystemNavItem = {
-  href: string;
-  label: string;
-  icon: typeof Upload;
-};
-
-function buildSystemNav(canManageMembers: boolean): SystemNavItem[] {
-  const items: SystemNavItem[] = [
-    { href: '/import-export', label: 'Importar / Exportar', icon: Upload },
-  ];
-  if (canManageMembers) {
-    items.push({ href: '/settings/members', label: 'Família', icon: Users });
-  }
-  items.push({ href: '/settings/preferences', label: 'Preferências', icon: SlidersHorizontal });
-  return items;
-}
-
-function titleFromPath(pathname: string, flow?: string | null): string {
-  if (pathname.startsWith('/payments')) {
-    return flow === 'receive' ? 'Contas a receber' : 'Contas a pagar';
-  }
-  if (pathname.startsWith('/wealth')) return 'Patrimônio';
-  if (pathname.startsWith('/transactions')) return 'Extrato';
-  if (pathname.startsWith('/financings')) return 'Financiamentos';
-  if (pathname.startsWith('/import-export')) return 'Importar / Exportar';
-  if (pathname.startsWith('/cadastros/categories')) return 'Categorias';
-  if (pathname.startsWith('/cadastros/cost-centers')) return 'Centros de custo';
-  if (pathname.startsWith('/cadastros/accounts')) return 'Bancos e contas';
-  if (pathname.startsWith('/cadastros')) return 'Cadastros';
-  if (pathname.startsWith('/settings/members')) return 'Família';
-  if (pathname.startsWith('/settings')) return 'Preferências';
-  if (pathname.startsWith('/dashboard')) return 'Dashboard';
-  return 'Time is Money';
-}
-
-function isActivePath(
-  pathname: string,
-  href: string,
-  opts?: { paymentsFlow?: 'pay' | 'receive'; currentPaymentsFlow?: 'pay' | 'receive' },
-): boolean {
-  if (href === '/settings/preferences') {
-    return pathname.startsWith('/settings/preferences') || pathname === '/settings';
-  }
-  if (href === '/payments' && opts?.paymentsFlow) {
-    return (
-      (pathname === '/payments' || pathname.startsWith('/payments/')) &&
-      opts.currentPaymentsFlow === opts.paymentsFlow
-    );
-  }
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function paymentsNavHref(scopedHref: string, flow: 'pay' | 'receive'): string {
-  const [path, query = ''] = scopedHref.split('?');
-  const params = new URLSearchParams(query);
-  if (flow === 'receive') params.set('flow', 'receive');
-  else params.delete('flow');
-  const qs = params.toString();
-  return qs ? `${path}?${qs}` : path;
-}
 
 function PrimaryNavLinks(): React.ReactElement {
   const pathname = usePathname();
@@ -234,7 +146,9 @@ function AppShellFallback({
           <p className="truncate text-sm font-medium">{titleFromPath(pathname)}</p>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 md:px-8">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-28 md:px-8 md:pb-6">
+        {children}
+      </div>
     </SidebarInset>
   );
 }
@@ -427,18 +341,26 @@ function AppShellFrame({
 
       <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
         <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-5" />
+          <SidebarTrigger className="hidden md:inline-flex" />
+          <Separator orientation="vertical" className="hidden h-5 md:block" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{pageTitle}</p>
           </div>
           <JarvisDock ttsEnabled={ttsEnabled} />
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 md:px-8">
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 py-6 pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pb-6">
           {children}
         </div>
       </SidebarInset>
+
+      <MobileFloatingNav
+        canManageMembers={canManageMembers}
+        userEmail={userEmail}
+        userLabel={userLabel}
+        initials={initials}
+        useClerkAccount={useClerkAccount}
+      />
     </>
   );
 }
