@@ -91,13 +91,13 @@ export function PayableRowDialog({
     [paymentMethods],
   );
 
-  /** Pendência / edição: só formas na conta (PIX/débito/TED/boleto), agrupadas por conta. */
+  /** Pendência / edição: formas na conta + cartão (cartão não fica pendente — vira fatura). */
   const plannedMethods = useMemo((): PaymentMethodOption[] => {
     if (isReceive) return uniqueAccountMethods(accountMethods);
-    return accountMethods;
-  }, [accountMethods, isReceive]);
+    return paymentMethods;
+  }, [accountMethods, paymentMethods, isReceive]);
 
-  /** Quitação: receber = conta; fatura = formas na conta; pagar = formas + cartão. */
+  /** Quitação: cartão sempre, exceto quitar a própria fatura (só conta). */
   const settleMethods = useMemo((): PaymentMethodOption[] => {
     if (isReceive) return uniqueAccountMethods(accountMethods);
     if (isInvoice) return accountMethods;
@@ -168,22 +168,36 @@ export function PayableRowDialog({
     return formData;
   }
 
-  function appendPlannedPaymentMethodFields(formData: FormData): void {
-    formData.set('accountId', plannedMethod?.accountId ?? row.accountId);
-    formData.set('paymentRail', plannedMethod?.paymentRail ?? 'pix');
-    const methodId = persistablePaymentMethodId(plannedMethod?.id);
+  function appendAccountPlannedFields(formData: FormData): void {
+    const accountMethod = plannedMethod?.type === 'account' ? plannedMethod : null;
+    formData.set('accountId', accountMethod?.accountId ?? row.accountId);
+    formData.set('paymentRail', accountMethod?.paymentRail ?? 'pix');
+    const methodId = persistablePaymentMethodId(accountMethod?.id);
     if (methodId) formData.set('paymentMethodId', methodId);
     formData.set('creditCardId', '');
   }
 
+  function appendPlannedPaymentMethodFields(formData: FormData): void {
+    if (plannedMethod?.type === 'credit_card' && plannedMethod.creditCardId) {
+      formData.set('creditCardId', plannedMethod.creditCardId);
+      formData.set('accountId', plannedMethod.accountId ?? row.accountId);
+      formData.set('paymentRail', '');
+      const methodId = persistablePaymentMethodId(plannedMethod.id);
+      if (methodId) formData.set('paymentMethodId', methodId);
+      return;
+    }
+    appendAccountPlannedFields(formData);
+  }
+
   function handleSave(): void {
     if (isInvoice) return;
+    const saveWithCard = !isReceive && plannedMethod?.type === 'credit_card';
     const formData = new FormData();
     formData.set('transactionId', row.id);
     formData.set('type', isReceive ? 'income' : 'expense');
-    formData.set('status', 'pending');
+    formData.set('status', saveWithCard ? 'paid' : 'pending');
     formData.set('description', description);
-    formData.set('date', dueOn);
+    formData.set('date', saveWithCard ? paidOn || dueOn : dueOn);
     formData.set('amount', editAmount);
     formData.set('costCenterId', costCenterId);
     formData.set('categoryId', categoryId);
@@ -193,7 +207,7 @@ export function PayableRowDialog({
       try {
         await run(() => updateTransactionAction(formData), {
           loading: 'Salvando…',
-          success: 'Conta atualizada',
+          success: saveWithCard ? 'Compra adicionada à fatura' : 'Conta atualizada',
           invalidate: 'money',
         });
         onOpenChange(false);
@@ -224,7 +238,9 @@ export function PayableRowDialog({
         ? 'Quitando fatura…'
         : isReceive
           ? 'Registrando recebimento…'
-          : 'Registrando pagamento…',
+          : payWithCard
+            ? 'Registrando no cartão…'
+            : 'Registrando pagamento…',
     );
 
     startTransition(async () => {
@@ -239,7 +255,8 @@ export function PayableRowDialog({
           editForm.set('amount', editAmount || payAmount);
           editForm.set('costCenterId', costCenterId);
           editForm.set('categoryId', categoryId);
-          appendPlannedPaymentMethodFields(editForm);
+          // Pendência intermediária nunca leva creditCardId (compra no crédito = pay).
+          appendAccountPlannedFields(editForm);
           await updateTransactionAction(editForm);
         }
 
@@ -250,7 +267,7 @@ export function PayableRowDialog({
               : payTransactionAction(buildPayFormData()),
           {
             toastId,
-            success: actionPast,
+            success: payWithCard ? 'Compra adicionada à fatura' : actionPast,
             invalidate: 'money',
           },
         );
@@ -360,7 +377,6 @@ export function PayableRowDialog({
                   onChange={(event) => {
                     const nextId = event.target.value;
                     setPlannedMethodId(nextId);
-                    // Mantém quitação alinhada quando a forma planejada é na conta.
                     if (settleMethods.some((item) => item.id === nextId)) {
                       setSettleMethodId(nextId);
                     }
@@ -375,16 +391,18 @@ export function PayableRowDialog({
                     ))
                   ) : (
                     <PaymentMethodSelectGroups
-                      accountMethods={plannedMethods}
-                      cardMethods={[]}
-                      showCards={false}
+                      accountMethods={accountMethods}
+                      cardMethods={cardMethods}
+                      showCards
                     />
                   )}
                 </select>
                 <p className="text-xs text-muted-foreground">
                   {isReceive
                     ? 'Conta onde o valor deve entrar.'
-                    : 'PIX, débito, TED ou boleto — agrupados por conta. Cartão só na hora de pagar.'}
+                    : plannedMethod?.type === 'credit_card'
+                      ? 'Salvar com cartão lança a compra na fatura (não fica pendente).'
+                      : 'PIX/débito/TED na conta, ou cartão (vai para a fatura).'}
                 </p>
               </div>
               <div className="border-t pt-3">
@@ -438,11 +456,13 @@ export function PayableRowDialog({
                 />
               )}
             </select>
-            {!isReceive && !isInvoice ? (
+            {!isReceive ? (
               <p className="text-xs text-muted-foreground">
-                {showEdit
-                  ? 'Inclui cartões de crédito (compra vai para a fatura). Pode diferir da prevista acima.'
-                  : 'PIX/débito/TED na conta, ou cartão de crédito (vai para a fatura).'}
+                {isInvoice
+                  ? 'Quitação da fatura: só formas na conta (não se paga cartão com cartão).'
+                  : payWithCard
+                    ? 'Compra no crédito → entra na fatura. A conta só sai ao quitar a fatura.'
+                    : 'PIX/débito/TED na conta, ou cartão de crédito (grupo no final da lista).'}
               </p>
             ) : null}
           </div>

@@ -87,9 +87,14 @@ function SettledEditDialog({
     () => paymentMethods.filter((method) => method.type === 'account'),
     [paymentMethods],
   );
+  const cardMethods = useMemo(
+    () => paymentMethods.filter((method) => method.type === 'credit_card'),
+    [paymentMethods],
+  );
+  /** Cartão sempre na forma (exceto receber). */
   const methods = useMemo(
-    () => (isReceive ? uniqueAccountMethods(accountMethods) : accountMethods),
-    [accountMethods, isReceive],
+    () => (isReceive ? uniqueAccountMethods(accountMethods) : paymentMethods),
+    [accountMethods, paymentMethods, isReceive],
   );
 
   const [pending, startTransition] = useTransition();
@@ -144,9 +149,15 @@ function SettledEditDialog({
     formData.set('amount', amount);
     formData.set('costCenterId', costCenterId);
     formData.set('categoryId', categoryId);
-    formData.set('accountId', method?.accountId ?? row.accountId);
-    formData.set('paymentRail', method?.paymentRail ?? 'pix');
-    formData.set('creditCardId', '');
+    if (method?.type === 'credit_card' && method.creditCardId) {
+      formData.set('creditCardId', method.creditCardId);
+      formData.set('accountId', method.accountId ?? row.accountId);
+      formData.set('paymentRail', '');
+    } else {
+      formData.set('accountId', method?.accountId ?? row.accountId);
+      formData.set('paymentRail', method?.paymentRail ?? 'pix');
+      formData.set('creditCardId', '');
+    }
     if (method?.id && UUID_RE.test(method.id)) {
       formData.set('paymentMethodId', method.id);
     }
@@ -155,7 +166,12 @@ function SettledEditDialog({
       try {
         await run(() => updateTransactionAction(formData), {
           loading: 'Salvando…',
-          success: isReceive ? 'Recebimento atualizado' : 'Pagamento atualizado',
+          success:
+            method?.type === 'credit_card'
+              ? 'Movido para a fatura do cartão'
+              : isReceive
+                ? 'Recebimento atualizado'
+                : 'Pagamento atualizado',
           invalidate: 'money',
         });
         onOpenChange(false);
@@ -261,15 +277,15 @@ function SettledEditDialog({
                 ))
               ) : (
                 <PaymentMethodSelectGroups
-                  accountMethods={methods}
-                  cardMethods={[]}
-                  showCards={false}
+                  accountMethods={accountMethods}
+                  cardMethods={cardMethods}
+                  showCards
                 />
               )}
             </select>
             {!isReceive ? (
               <p className="text-xs text-muted-foreground">
-                PIX, débito, TED ou boleto — agrupados por conta.
+                PIX/débito/TED na conta, ou cartão de crédito (grupo no final).
               </p>
             ) : null}
           </div>

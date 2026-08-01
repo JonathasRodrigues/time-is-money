@@ -97,13 +97,13 @@ export function NewPayableSheet({
     [paymentMethods],
   );
 
-  /** Fixas: só formas na conta (ou definir depois). Crédito só em variável. */
-  const selectableMethods = kind === 'fixed' ? accountMethods : paymentMethods;
+  /** Cartão sempre disponível; no crédito a compra vai para a fatura (vira variável paga). */
+  const selectableMethods = paymentMethods;
   const selectedMethod =
     methodId === DEFER_METHOD_ID
       ? null
       : (selectableMethods.find((method) => method.id === methodId) ?? null);
-  const useCard = kind === 'variable' && selectedMethod?.type === 'credit_card';
+  const useCard = selectedMethod?.type === 'credit_card';
   /** Crédito = compra já no cartão (sempre “pago” na fatura). */
   const isPaid = useCard || status === 'paid';
   const allowDefer = !isPaid;
@@ -175,6 +175,8 @@ export function NewPayableSheet({
     setMethodId(nextId);
     const next = selectableMethods.find((method) => method.id === nextId);
     if (next?.type === 'credit_card') {
+      // Crédito não é série fixa — lança compra na fatura.
+      setKind('variable');
       setParcelar(false);
       setStatus('paid');
     }
@@ -487,9 +489,10 @@ export function NewPayableSheet({
                 value={methodId}
                 onChange={onMethodChange}
                 accountMethods={accountMethods}
-                cardMethods={[]}
-                allowCard={false}
+                cardMethods={cardMethods}
+                allowCard
                 allowDefer
+                hint="Cartão troca para despesa variável e lança na fatura."
               />
 
               <div className="grid gap-3 sm:grid-cols-2">
