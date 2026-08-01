@@ -90,15 +90,7 @@ export function paymentRailOptionLabel(method: PaymentMethodOption): string {
   return paymentMethodOptionLabelInGroup(method);
 }
 
-function methodGroupLabel(method: PaymentMethodOption): string {
-  if (method.type === 'credit_card') {
-    const institution = method.linkedInstitutionName?.trim();
-    const account = method.linkedAccountName?.trim();
-    if (account && institution) return `${account} · ${institution}`;
-    if (institution) return institution;
-    if (account) return account;
-    return 'Cartão de crédito';
-  }
+function accountGroupLabel(method: PaymentMethodOption): string {
   const name = method.linkedAccountName?.trim();
   const institution = method.linkedInstitutionName?.trim();
   if (name && institution) return `${name} · ${institution}`;
@@ -111,51 +103,50 @@ function methodGroupLabel(method: PaymentMethodOption): string {
   return method.label;
 }
 
-function methodGroupKey(method: PaymentMethodOption): string {
-  if (method.type === 'account' && method.accountId) {
-    return `account:${method.accountId}`;
-  }
-  if (method.type === 'credit_card') {
-    if (method.accountId) return `account:${method.accountId}`;
-    const institution = method.linkedInstitutionName?.trim();
-    if (institution) return `institution:${institution}`;
-    if (method.creditCardId) return `card:${method.creditCardId}`;
-  }
-  return method.id;
-}
-
 /**
- * Agrupa formas por conta/banco: PIX/débito/TED/boleto e cartões
- * da mesma conta vinculada no mesmo optgroup.
+ * Contas: um optgroup por conta (PIX/débito/TED/boleto).
+ * Cartões: grupo próprio "Cartões de crédito" — não misturar com rails da conta.
  */
 export function groupPaymentMethods(methods: PaymentMethodOption[]): PaymentMethodGroup[] {
-  const order: string[] = [];
-  const byKey = new Map<string, PaymentMethodGroup>();
+  const accountOrder: string[] = [];
+  const accountGroups = new Map<string, PaymentMethodGroup>();
+  const cardMethods: PaymentMethodOption[] = [];
 
   for (const method of methods) {
-    const key = methodGroupKey(method);
-    let group = byKey.get(key);
+    if (method.type === 'credit_card') {
+      cardMethods.push(method);
+      continue;
+    }
+    const key = method.accountId ? `account:${method.accountId}` : method.id;
+    let group = accountGroups.get(key);
     if (!group) {
       group = {
         key,
-        label: methodGroupLabel(method),
+        label: accountGroupLabel(method),
         methods: [],
       };
-      byKey.set(key, group);
-      order.push(key);
+      accountGroups.set(key, group);
+      accountOrder.push(key);
     }
     group.methods.push(method);
   }
 
-  // Conta primeiro (rails), cartão depois dentro do grupo.
-  for (const group of byKey.values()) {
-    group.methods.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'account' ? -1 : 1;
-      return a.label.localeCompare(b.label, 'pt-BR');
+  for (const group of accountGroups.values()) {
+    group.methods.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }
+
+  const groups = accountOrder.map((key) => accountGroups.get(key)!);
+
+  if (cardMethods.length > 0) {
+    cardMethods.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+    groups.push({
+      key: 'credit-cards',
+      label: 'Cartões de crédito',
+      methods: cardMethods,
     });
   }
 
-  return order.map((key) => byKey.get(key)!);
+  return groups;
 }
 
 /** @deprecated Preferir groupPaymentMethods. */

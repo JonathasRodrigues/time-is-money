@@ -438,9 +438,11 @@ export function PayableRowDialog({
                 />
               )}
             </select>
-            {showEdit && !isReceive ? (
+            {!isReceive && !isInvoice ? (
               <p className="text-xs text-muted-foreground">
-                Forma usada nesta quitação (pode diferir da prevista acima).
+                {showEdit
+                  ? 'Inclui cartões de crédito (compra vai para a fatura). Pode diferir da prevista acima.'
+                  : 'PIX/débito/TED na conta, ou cartão de crédito (vai para a fatura).'}
               </p>
             ) : null}
           </div>

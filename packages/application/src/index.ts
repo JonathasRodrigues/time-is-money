@@ -1798,6 +1798,15 @@ export async function updateCreditCard(ctx: AppContext, raw: UpdateCreditCardInp
     .where(eq(creditCards.id, existing.id))
     .returning();
 
+  if (row) {
+    await ensureCreditCardPaymentMethod(ctx.db, {
+      householdId: session.householdId,
+      creditCardId: row.id,
+      paymentAccountId: row.paymentAccountId,
+      cardMode: row.cardMode,
+    });
+  }
+
   await writeAudit(ctx, {
     action: 'update',
     resourceType: 'credit_card',
