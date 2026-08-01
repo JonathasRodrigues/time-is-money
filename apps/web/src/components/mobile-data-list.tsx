@@ -5,25 +5,18 @@ type MobileDataListProps = {
   children: ReactNode;
   empty?: ReactNode;
   className?: string;
-  /** Quando true, usa gap entre cards (padrão). Quando false, lista contínua. */
-  spaced?: boolean;
 };
 
 /**
- * Lista de cards para viewport mobile — esconde em `md+`.
- * Use junto com a tabela `hidden md:block` no desktop.
+ * Lista mobile plana (divide-y) — evita card dentro de card.
+ * Use com tabela `hidden md:block` no desktop.
  */
 export function MobileDataList({
   children,
   empty,
   className,
-  spaced = true,
 }: MobileDataListProps): React.ReactElement {
-  return (
-    <div className={cn('md:hidden', spaced ? 'space-y-3 px-4 sm:px-5' : 'divide-y', className)}>
-      {empty ?? children}
-    </div>
-  );
+  return <div className={cn('divide-y md:hidden', className)}>{empty ?? children}</div>;
 }
 
 type AmountTone = 'default' | 'income' | 'expense' | 'muted' | 'danger';
@@ -52,6 +45,7 @@ type MobileDataCardProps = {
   className?: string;
 };
 
+/** Linha de lista (sem borda/sombra próprias — o container pai já é o card). */
 export function MobileDataCard({
   title,
   subtitle,
@@ -68,19 +62,15 @@ export function MobileDataCard({
   return (
     <article
       data-selected={selected ? 'true' : undefined}
-      className={cn(
-        'rounded-2xl border bg-card p-3.5 shadow-sm transition-colors',
-        selected && 'border-primary/40 bg-primary/5 ring-1 ring-primary/25',
-        className,
-      )}
+      className={cn('px-4 py-3.5 transition-colors sm:px-5', selected && 'bg-primary/5', className)}
     >
       <div className="flex items-start gap-3">
         {leading ? <div className="pt-0.5">{leading}</div> : null}
 
-        <div className="min-w-0 flex-1 space-y-2">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <p className="truncate text-[15px] font-semibold leading-snug tracking-tight">
+            <div className="min-w-0 space-y-0.5">
+              <p className="truncate text-[15px] font-medium leading-snug tracking-tight">
                 {title}
               </p>
               {subtitle ? (
@@ -109,7 +99,7 @@ export function MobileDataCard({
           {footer ? <div className="text-xs text-muted-foreground">{footer}</div> : null}
 
           {actions ? (
-            <div className="flex flex-wrap items-center justify-end gap-1.5 pt-0.5">{actions}</div>
+            <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">{actions}</div>
           ) : null}
         </div>
       </div>
@@ -119,8 +109,6 @@ export function MobileDataCard({
 
 export function MobileDataEmpty({ children }: { children: ReactNode }): React.ReactElement {
   return (
-    <div className="rounded-2xl border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-      {children}
-    </div>
+    <div className="px-4 py-10 text-center text-sm text-muted-foreground sm:px-5">{children}</div>
   );
 }

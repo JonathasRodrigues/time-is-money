@@ -104,7 +104,6 @@ function TransactionsContent({ data }: { data: TransactionsResponse }): React.Re
         </div>
 
         <MobileDataList
-          className="py-4"
           empty={
             rows.length === 0 ? (
               <MobileDataEmpty>
