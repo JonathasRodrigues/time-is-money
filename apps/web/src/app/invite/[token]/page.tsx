@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { peekHouseholdInvite } from '@tim/application';
-import { MEMBER_ROLE_LABEL } from '@tim/domain';
+import { emailsMatchForInvite, MEMBER_ROLE_LABEL } from '@tim/domain';
 import { AuthCardHeader, AuthShell, shouldUseClerk } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { AcceptInviteForm } from '@/components/accept-invite-form';
@@ -113,6 +113,25 @@ export default async function InvitePage({
         <Button asChild>
           <Link href="/dashboard">Ir ao dashboard</Link>
         </Button>
+      </AuthShell>
+    );
+  }
+
+  if (!emailsMatchForInvite(peek.email, session.email)) {
+    return (
+      <AuthShell eyebrow="Convite">
+        <AuthCardHeader
+          title="E-mail diferente do convite"
+          description={`Este convite é para ${peek.email}. Você está em ${session.email ?? 'uma conta sem e-mail'}. Entre com o e-mail convidado.`}
+        />
+        <div className="flex flex-col gap-3">
+          <Button asChild>
+            <Link href={signInHref}>Trocar de conta</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/">Ir para o início</Link>
+          </Button>
+        </div>
       </AuthShell>
     );
   }

@@ -7,12 +7,42 @@ import { eq } from 'drizzle-orm';
 import { env, isDemoMode } from './env.js';
 import { getDb } from './db.js';
 
+type ClerkClient = ReturnType<typeof createClerkClient>;
+
 function clerkPublishableKey(): string | undefined {
   const key = env.CLERK_PUBLISHABLE_KEY;
   if (key && key.startsWith('pk_') && !key.includes('placeholder')) {
     return key;
   }
   return undefined;
+}
+
+function emailFromClaims(claims: Record<string, unknown> | undefined | null): string | null {
+  if (!claims) return null;
+  if (typeof claims.email === 'string' && claims.email.length > 0) return claims.email;
+  if (typeof claims.primary_email_address === 'string' && claims.primary_email_address.length > 0) {
+    return claims.primary_email_address;
+  }
+  return null;
+}
+
+/**
+ * JWT/session claims do Clerk não incluem e-mail por padrão.
+ * Busca o primary e-mail na API do Clerk quando o claim estiver ausente
+ * (necessário p.ex. para aceitar convites sem membership prévia).
+ */
+async function resolveClerkEmail(
+  clerk: ClerkClient,
+  userId: string,
+  claimsEmail: string | null,
+): Promise<string | null> {
+  if (claimsEmail) return claimsEmail;
+  try {
+    const user = await clerk.users.getUser(userId);
+    return user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function membershipSession(
@@ -91,6 +121,8 @@ export async function getAuthSession(request: Request): Promise<AuthSession | nu
     return null;
   }
 
+  const clerk = createClerkClient({ secretKey });
+
   const authHeader = request.headers.get('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice('Bearer '.length).trim();
@@ -98,19 +130,14 @@ export async function getAuthSession(request: Request): Promise<AuthSession | nu
       const payload = await verifyToken(token, { secretKey });
       const userId = payload.sub;
       if (!userId) return null;
-      const email =
-        typeof payload.email === 'string'
-          ? payload.email
-          : typeof payload.primary_email_address === 'string'
-            ? payload.primary_email_address
-            : null;
+      const claimsEmail = emailFromClaims(payload as Record<string, unknown>);
+      const email = await resolveClerkEmail(clerk, userId, claimsEmail);
       return membershipSession(userId, email);
     } catch {
       return null;
     }
   }
 
-  const clerk = createClerkClient({ secretKey });
   const requestState = await clerk.authenticateRequest(requestForClerkAuth(request), {
     publishableKey,
     authorizedParties: env.APP_BASE_URL ? [env.APP_BASE_URL.replace(/\/$/, '')] : undefined,
@@ -124,13 +151,8 @@ export async function getAuthSession(request: Request): Promise<AuthSession | nu
   const userId = auth.userId;
   if (!userId) return null;
 
-  const email =
-    auth.sessionClaims?.email && typeof auth.sessionClaims.email === 'string'
-      ? auth.sessionClaims.email
-      : auth.sessionClaims?.primary_email_address &&
-          typeof auth.sessionClaims.primary_email_address === 'string'
-        ? auth.sessionClaims.primary_email_address
-        : null;
+  const claimsEmail = emailFromClaims(auth.sessionClaims as Record<string, unknown> | null);
+  const email = await resolveClerkEmail(clerk, userId, claimsEmail);
 
   return membershipSession(userId, email);
 }
