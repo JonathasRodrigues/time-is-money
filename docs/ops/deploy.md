@@ -41,6 +41,16 @@ DATABASE_URL='postgresql://...@...neon.tech/neondb?sslmode=require' pnpm db:migr
 
 `pnpm db:migrate` ou `packages/db/drizzle/upgrade-delta.sql`.
 
+### Reparar compras no cartão sem fatura (one-shot)
+
+Se houver despesas com `credit_card_id` e `credit_card_invoice_id` nulo (import antigo), rode **uma vez**:
+
+```bash
+DATABASE_URL='postgresql://...@...neon.tech/neondb?sslmode=require' pnpm db:link-orphan-invoices
+```
+
+Não rode em loop nem em request de UI — é comando de reparo, não ensure de leitura.
+
 ---
 
 ## 2. Secrets

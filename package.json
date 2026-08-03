@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @tim/db generate",
     "db:migrate": "pnpm --filter @tim/db migrate",
     "db:studio": "pnpm --filter @tim/db studio",
+    "db:link-orphan-invoices": "pnpm --filter @tim/application link-orphan-invoices",
     "demo:seed": "pnpm --filter @tim/mocks seed",
     "dev:demo": "pnpm demo:seed && DEMO_MODE=1 turbo run dev --filter=@tim/web --filter=@tim/api",
     "dev:mock": "MOCK_API=1 NEXT_PUBLIC_MOCK_API=1 turbo run dev --filter=@tim/web",

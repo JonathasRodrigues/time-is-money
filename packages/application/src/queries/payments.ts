@@ -3,13 +3,11 @@ import {
   availableCreditCents,
   cardHasCredit,
   coerceAllowedPaymentRails,
-  dueOnForMonth,
   estimatePayableCents,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
   resolvePayableKind,
   suggestAverageAmountCents,
-  yearMonthFromIso,
 } from '@tim/domain';
 import {
   accounts,
@@ -28,7 +26,6 @@ import type { AppContext } from '../context';
 import {
   closeDueCreditCardInvoices,
   INVOICE_OPENING_SOURCE,
-  linkOrphanCardPurchasesToInvoices,
   sumInvoiceBalanceCents,
 } from '../card-invoices';
 import { ensureAccountPaymentMethods, ensureCreditCardPaymentMethod } from '../payment-methods';
@@ -64,8 +61,6 @@ export async function loadPayments(
 
   if (flow === 'pay') {
     await closeDueCreditCardInvoices(ctx, today);
-    // Import antigo: compras no cartão sem ciclo — amarra antes de montar a lista.
-    await linkOrphanCardPurchasesToInvoices(ctx);
   }
 
   const [centers, cats, accs, cards, banks] = await Promise.all([
@@ -396,7 +391,6 @@ export async function loadPayments(
         )
         .orderBy(asc(creditCardInvoices.dueOn));
 
-      let emittedForCard = false;
       for (const invoice of invoices) {
         const purchaseTotalCents = await sumInvoiceBalanceCents(db, {
           householdId: session.householdId,
@@ -495,38 +489,6 @@ export async function loadPayments(
           purchaseCount: purchases.length,
           purchases,
         });
-        emittedForCard = true;
-      }
-
-      if (!emittedForCard && card.invoiceBalanceCents > 0) {
-        const dueOn = dueOnForMonth(yearMonthFromIso(today), card.dueDay);
-        const inPeriod = dueOn >= start && dueOn <= end;
-        if (creditCardId || inPeriod || dueOn < today) {
-          const paymentAccount = accountMap.get(card.paymentAccountId);
-          const cardLabel = card.lastFour ? `${card.name} ·••• ${card.lastFour}` : card.name;
-          invoiceRows.push({
-            id: card.id,
-            dueOn,
-            description: `Fatura · ${cardLabel}`,
-            kind: 'credit_card_invoice',
-            costCenterId: paymentAccount?.costCenterId ?? null,
-            costCenterName: paymentAccount
-              ? (centerMap.get(paymentAccount.costCenterId) ?? '—')
-              : '—',
-            categoryId: null,
-            categoryName: 'Fatura de cartão',
-            accountId: card.paymentAccountId,
-            amountCents: card.invoiceBalanceCents,
-            paymentRail: null,
-            suggestedCents: card.invoiceBalanceCents,
-            estimatedCents: card.invoiceBalanceCents,
-            creditCardId: card.id,
-            creditCardInvoiceId: null,
-            creditCardName: card.name,
-            purchaseCount: 0,
-            purchases: [],
-          });
-        }
       }
     }
   }

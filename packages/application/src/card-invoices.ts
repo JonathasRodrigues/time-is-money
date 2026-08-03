@@ -364,14 +364,13 @@ export async function syncCardInvoiceOpeningBalance(
 /**
  * Import / dados antigos: compra com `credit_card_id` mas sem `credit_card_invoice_id`.
  * Amarra cada uma ao ciclo correto e recalcula o cache da fatura.
+ * Comando de reparo (one-shot) — não chamar em queries de listagem.
  */
-export async function linkOrphanCardPurchasesToInvoices(
-  ctx: AppContext,
+export async function linkOrphanCardPurchasesForHousehold(
+  db: AppContext['db'],
+  householdId: string,
 ): Promise<{ linked: number; cards: number }> {
-  const session = ctx.session;
-  if (!session?.householdId) return { linked: 0, cards: 0 };
-
-  const orphans = await ctx.db
+  const orphans = await db
     .select({
       id: transactions.id,
       creditCardId: transactions.creditCardId,
@@ -381,7 +380,7 @@ export async function linkOrphanCardPurchasesToInvoices(
     .from(transactions)
     .where(
       and(
-        eq(transactions.householdId, session.householdId),
+        eq(transactions.householdId, householdId),
         isNull(transactions.deletedAt),
         eq(transactions.type, 'expense'),
         eq(transactions.status, 'paid'),
@@ -397,15 +396,10 @@ export async function linkOrphanCardPurchasesToInvoices(
   );
 
   const cardIds = [...new Set(withCard.map((row) => row.creditCardId))];
-  const cards = await ctx.db
+  const cards = await db
     .select()
     .from(creditCards)
-    .where(
-      and(
-        eq(creditCards.householdId, session.householdId),
-        inArray(creditCards.id, cardIds),
-      ),
-    );
+    .where(and(eq(creditCards.householdId, householdId), inArray(creditCards.id, cardIds)));
   const cardById = new Map(cards.map((card) => [card.id, card]));
 
   let linked = 0;
@@ -416,19 +410,19 @@ export async function linkOrphanCardPurchasesToInvoices(
     if (!card || !cardHasCredit(card.cardMode)) continue;
 
     const purchaseOn = row.paidOn ?? row.occurredOn;
-    const invoice = await getOrCreateInvoiceForPurchase(ctx.db, {
-      householdId: session.householdId,
+    const invoice = await getOrCreateInvoiceForPurchase(db, {
+      householdId,
       card,
       purchaseOn,
     });
 
-    await ctx.db
+    await db
       .update(transactions)
       .set({ creditCardInvoiceId: invoice.id, updatedAt: new Date() })
       .where(
         and(
           eq(transactions.id, row.id),
-          eq(transactions.householdId, session.householdId),
+          eq(transactions.householdId, householdId),
           isNull(transactions.creditCardInvoiceId),
         ),
       );
@@ -438,13 +432,19 @@ export async function linkOrphanCardPurchasesToInvoices(
   }
 
   for (const creditCardId of touchedCards) {
-    await refreshCardInvoiceBalanceCache(ctx.db, {
-      householdId: session.householdId,
-      creditCardId,
-    });
+    await refreshCardInvoiceBalanceCache(db, { householdId, creditCardId });
   }
 
   return { linked, cards: touchedCards.size };
+}
+
+/** Wrapper de sessão para o comando de reparo. */
+export async function linkOrphanCardPurchasesToInvoices(
+  ctx: AppContext,
+): Promise<{ linked: number; cards: number }> {
+  const session = ctx.session;
+  if (!session?.householdId) return { linked: 0, cards: 0 };
+  return linkOrphanCardPurchasesForHousehold(ctx.db, session.householdId);
 }
 
 /** Cartões com saldo em cache e sem nenhum item: materializa saldo inicial. */
