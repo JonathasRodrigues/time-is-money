@@ -24,7 +24,11 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
 import { resolveCostCenterId, resolveDateRangeWithLegacyMonth } from '@tim/domain';
 import { requireSession } from '@tim/auth';
 import type { AppContext } from '../context';
-import { closeDueCreditCardInvoices, sumInvoiceBalanceCents } from '../card-invoices';
+import {
+  closeDueCreditCardInvoices,
+  INVOICE_OPENING_DESCRIPTION,
+  sumInvoiceBalanceCents,
+} from '../card-invoices';
 import { ensureAccountPaymentMethods, ensureCreditCardPaymentMethod } from '../payment-methods';
 
 function todayIso(): string {
@@ -396,7 +400,14 @@ export async function loadPayments(
           .select({
             id: transactions.id,
             description: transactions.description,
+            costCenterId: transactions.costCenterId,
             categoryId: transactions.categoryId,
+            accountId: transactions.accountId,
+            paymentRail: transactions.paymentRail,
+            creditCardId: transactions.creditCardId,
+            creditCardInvoiceId: transactions.creditCardInvoiceId,
+            seriesId: transactions.seriesId,
+            installmentId: transactions.installmentId,
             occurredOn: transactions.occurredOn,
             paidOn: transactions.paidOn,
             amountCents: transactions.amountCents,
@@ -412,13 +423,35 @@ export async function loadPayments(
           )
           .orderBy(asc(transactions.paidOn), asc(transactions.occurredOn));
 
-        const purchases = purchaseLines.map((line) => ({
-          id: line.id,
-          description: line.description,
-          categoryName: catMap.get(line.categoryId) ?? 'Categoria',
-          occurredOn: line.paidOn ?? line.occurredOn,
-          amountCents: line.amountCents ?? 0,
-        }));
+        const purchases = purchaseLines.map((line) => {
+          const paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null =
+            line.paymentRail === 'pix' ||
+            line.paymentRail === 'debit' ||
+            line.paymentRail === 'ted' ||
+            line.paymentRail === 'boleto' ||
+            line.paymentRail === 'cash' ||
+            line.paymentRail === 'other'
+              ? line.paymentRail
+              : null;
+          return {
+            id: line.id,
+            description: line.description,
+            kind: resolvePayableKind({
+              seriesId: line.seriesId,
+              installmentId: line.installmentId,
+            }),
+            costCenterId: line.costCenterId,
+            costCenterName: centerMap.get(line.costCenterId) ?? '—',
+            categoryId: line.categoryId,
+            categoryName: catMap.get(line.categoryId) ?? 'Categoria',
+            accountId: line.accountId,
+            paymentRail,
+            creditCardId: line.creditCardId,
+            creditCardInvoiceId: line.creditCardInvoiceId,
+            occurredOn: line.paidOn ?? line.occurredOn,
+            amountCents: line.amountCents ?? 0,
+          };
+        });
 
         const paymentAccount = accountMap.get(card.paymentAccountId);
         const cardLabel = card.lastFour ? `${card.name} ·••• ${card.lastFour}` : card.name;
@@ -473,8 +506,26 @@ export async function loadPayments(
             creditCardId: card.id,
             creditCardInvoiceId: null,
             creditCardName: card.name,
-            purchaseCount: null,
-            purchases: [],
+            purchaseCount: 1,
+            purchases: [
+              {
+                id: card.id,
+                description: INVOICE_OPENING_DESCRIPTION,
+                kind: 'variable' as const,
+                costCenterId: paymentAccount?.costCenterId ?? null,
+                costCenterName: paymentAccount
+                  ? (centerMap.get(paymentAccount.costCenterId) ?? '—')
+                  : '—',
+                categoryId: null,
+                categoryName: 'Fatura de cartão',
+                accountId: card.paymentAccountId,
+                paymentRail: null,
+                creditCardId: card.id,
+                creditCardInvoiceId: null,
+                occurredOn: dueOn,
+                amountCents: card.invoiceBalanceCents,
+              },
+            ],
           });
         }
       }

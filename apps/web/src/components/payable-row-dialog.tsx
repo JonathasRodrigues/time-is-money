@@ -63,6 +63,8 @@ export function PayableRowDialog({
   centers,
   categories,
   onSettled,
+  /** false = só Salvar (itens da fatura; quitação fica no agrupamento). */
+  allowPay = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -74,10 +76,12 @@ export function PayableRowDialog({
   centers: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string }>;
   onSettled?: (id: string) => void;
+  allowPay?: boolean;
 }): React.ReactElement {
   const isReceive = mode === 'receive';
   const isInvoice = row.kind === 'credit_card_invoice';
   const showEdit = intent === 'edit' && !isInvoice;
+  const showPay = allowPay && (intent === 'pay' || showEdit);
   const actionVerb = isInvoice ? 'Quitar' : isReceive ? 'Receber' : 'Pagar';
   const actionPast = isInvoice ? 'Fatura quitada' : isReceive ? 'Recebido' : 'Pago';
   const dateLabel = isReceive ? 'Recebido em' : 'Pago em';
@@ -511,9 +515,11 @@ export function PayableRowDialog({
               Salvar
             </Button>
           ) : null}
-          <Button type="button" disabled={pending || lacksBalance} onClick={handlePay}>
-            {pending ? `${actionVerb}…` : actionVerb}
-          </Button>
+          {showPay ? (
+            <Button type="button" disabled={pending || lacksBalance} onClick={handlePay}>
+              {pending ? `${actionVerb}…` : actionVerb}
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
