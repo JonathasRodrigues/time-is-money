@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react';
 import {
   formatCreditCardPaymentMethodLabel,
+  INSTANT_ACCOUNT_PAYMENT_RAILS,
   PAYMENT_RAIL_LABEL,
+  type InstantAccountPaymentRail,
   type PaymentRail,
 } from '@tim/domain';
 import { Plus } from 'lucide-react';
@@ -27,7 +29,11 @@ import { ActionForm } from '@/components/action-form';
 import { createTransactionAction } from '@/lib/api/mutations';
 import { cn } from '@/lib/utils';
 
-const PAYMENT_RAILS: PaymentRail[] = ['pix', 'debit', 'ted', 'boleto', 'cash', 'other'];
+type AccountOption = {
+  id: string;
+  name: string;
+  allowedPaymentRails?: InstantAccountPaymentRail[];
+};
 
 export function NewTransactionSheet({
   centers,
@@ -39,7 +45,7 @@ export function NewTransactionSheet({
 }: {
   centers: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string; type: string }>;
-  accounts: Array<{ id: string; name: string }>;
+  accounts: AccountOption[];
   creditCards?: Array<{
     id: string;
     name: string;
@@ -53,11 +59,19 @@ export function NewTransactionSheet({
   const [status, setStatus] = useState<'paid' | 'pending'>('paid');
   const [funding, setFunding] = useState<'account' | 'card'>('account');
   const [selectedCardId, setSelectedCardId] = useState(creditCards[0]?.id ?? '');
+  const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id ?? '');
 
   const filteredCategories = useMemo(
     () => categories.filter((category) => category.type === type),
     [categories, type],
   );
+
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
+  const accountRails = useMemo((): PaymentRail[] => {
+    const allowed = selectedAccount?.allowedPaymentRails;
+    if (!allowed) return [...INSTANT_ACCOUNT_PAYMENT_RAILS];
+    return INSTANT_ACCOUNT_PAYMENT_RAILS.filter((rail) => allowed.includes(rail));
+  }, [selectedAccount?.allowedPaymentRails]);
 
   const isExpense = type === 'expense';
   const isPaid = status === 'paid';
@@ -295,7 +309,8 @@ export function NewTransactionSheet({
                   name="accountId"
                   className={nativeSelectClassName}
                   required
-                  defaultValue={accounts[0]?.id}
+                  value={selectedAccountId}
+                  onChange={(event) => setSelectedAccountId(event.target.value)}
                 >
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -304,7 +319,7 @@ export function NewTransactionSheet({
                   ))}
                 </select>
               </div>
-              {isExpense ? (
+              {isExpense && accountRails.length > 0 ? (
                 <div className="grid gap-1.5">
                   <Label htmlFor="new-paymentRail">Meio (opcional)</Label>
                   <select
@@ -312,9 +327,10 @@ export function NewTransactionSheet({
                     name="paymentRail"
                     className={nativeSelectClassName}
                     defaultValue=""
+                    key={selectedAccountId}
                   >
                     <option value="">—</option>
-                    {PAYMENT_RAILS.map((rail) => (
+                    {accountRails.map((rail) => (
                       <option key={rail} value={rail}>
                         {PAYMENT_RAIL_LABEL[rail]}
                       </option>

@@ -1,15 +1,11 @@
 import { paymentMethods, type DbClient } from '@tim/db';
 import {
-  INSTANT_ACCOUNT_PAYMENT_RAILS,
   cardHasCredit,
-  defaultAllowedPaymentRails,
   normalizeAllowedPaymentRails,
   type CardMode,
   type InstantAccountPaymentRail,
 } from '@tim/domain';
 import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
-
-const BALANCE_ACCOUNT_KINDS = new Set(['checking', 'savings', 'cash']);
 
 /**
  * Sincroniza meios account+rail com a lista permitida da conta.
@@ -81,7 +77,10 @@ export async function syncAccountPaymentMethods(
     );
 }
 
-/** Cria meios PIX/débito/TED/boleto para uma conta (ou os rails informados). */
+/**
+ * Sincroniza meios da conta com `rails`.
+ * Sem `rails`, não inventa os 4 padrões (evita desfazer a config da conta).
+ */
 export async function ensureAccountPaymentMethods(
   db: DbClient,
   input: {
@@ -91,19 +90,12 @@ export async function ensureAccountPaymentMethods(
     rails?: readonly InstantAccountPaymentRail[];
   },
 ): Promise<void> {
-  const rails =
-    input.rails !== undefined
-      ? normalizeAllowedPaymentRails(input.rails)
-      : BALANCE_ACCOUNT_KINDS.has(input.kind)
-        ? defaultAllowedPaymentRails(
-            input.kind as 'cash' | 'checking' | 'savings' | 'investment_pot',
-          )
-        : [];
+  if (input.rails === undefined) return;
 
   await syncAccountPaymentMethods(db, {
     householdId: input.householdId,
     accountId: input.accountId,
-    rails,
+    rails: normalizeAllowedPaymentRails(input.rails),
   });
 }
 
@@ -204,6 +196,3 @@ export async function findCreditCardPaymentMethod(
     .limit(1);
   return row ?? null;
 }
-
-/** @internal — mantém a constante exportável para seeds legados. */
-export const ACCOUNT_PAYMENT_RAILS = INSTANT_ACCOUNT_PAYMENT_RAILS;

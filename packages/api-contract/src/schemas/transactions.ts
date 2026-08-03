@@ -80,6 +80,7 @@ export const transactionsResponseSchema = z.object({
         id: z.string().uuid(),
         name: z.string(),
         institutionId: z.string().uuid().nullable(),
+        allowedPaymentRails: z.array(z.enum(['pix', 'debit', 'ted', 'boleto'])),
       }),
     ),
     creditCards: z.array(

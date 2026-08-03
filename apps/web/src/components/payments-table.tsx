@@ -56,7 +56,7 @@ type DialogState = {
  */
 export function PaymentsTable({
   rows,
-  accounts,
+  accounts: _accounts,
   paymentMethods,
   today,
   mode = 'pay',
@@ -64,6 +64,7 @@ export function PaymentsTable({
   categories = [],
 }: {
   rows: PayableRow[];
+  /** Mantido por compatibilidade; formas vêm só de `paymentMethods`. */
   accounts: PaymentAccountOption[];
   paymentMethods?: PaymentMethodOption[];
   today: string;
@@ -71,36 +72,15 @@ export function PaymentsTable({
   centers?: Array<{ id: string; name: string }>;
   categories?: Array<{ id: string; name: string }>;
 }): React.ReactElement {
+  void _accounts;
   const methods = useMemo((): PaymentMethodOption[] => {
     const fromApi = paymentMethods ?? [];
-    const accountFromApi = fromApi.filter((method) => method.type === 'account');
-
-    // Fallback: sintetiza PIX/débito/TED/boleto por conta se o lookup ainda não veio.
-    const accountRailsFallback = (): PaymentMethodOption[] =>
-      accounts.flatMap((account) =>
-        (['pix', 'debit', 'ted', 'boleto'] as const).map((rail) => ({
-          id: `account:${account.id}:${rail}`,
-          type: 'account' as const,
-          accountId: account.id,
-          creditCardId: null,
-          paymentRail: rail,
-          linkedAccountName: account.name,
-          linkedInstitutionName: null,
-          balanceCents: null,
-          label: `${
-            rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'
-          } · ${account.name}`,
-        })),
-      );
-
+    // Só o que a API envia (já filtrado por allowedPaymentRails da conta).
     if (mode === 'receive') {
-      const accountMethods = accountFromApi.length > 0 ? accountFromApi : accountRailsFallback();
-      return uniqueAccountMethods(accountMethods);
+      return uniqueAccountMethods(fromApi.filter((method) => method.type === 'account'));
     }
-
-    if (fromApi.length > 0) return fromApi;
-    return accountRailsFallback();
-  }, [paymentMethods, accounts, mode]);
+    return fromApi;
+  }, [paymentMethods, mode]);
 
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [applyAllDate, setApplyAllDate] = useState('');

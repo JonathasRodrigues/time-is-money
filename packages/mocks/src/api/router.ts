@@ -160,11 +160,17 @@ function buildTransactionsResponse(
         type: c.type,
       })),
       banks: [{ id: MOCK_IDS.institutionNubank, name: 'Nubank' }],
-      accounts: store.bootstrap.accounts.map((a) => ({
-        id: a.id,
-        name: a.name,
-        institutionId: accountInstitution[a.id] ?? null,
-      })),
+      accounts: store.bootstrap.accounts.map((a) => {
+        const detail = store.accounts.bankSections
+          .flatMap((section) => section.accounts)
+          .find((account) => account.id === a.id);
+        return {
+          id: a.id,
+          name: a.name,
+          institutionId: accountInstitution[a.id] ?? null,
+          allowedPaymentRails: detail?.allowedPaymentRails ?? ['pix', 'debit', 'ted', 'boleto'],
+        };
+      }),
       creditCards: [
         {
           id: MOCK_IDS.creditCard,

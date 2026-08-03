@@ -204,6 +204,7 @@ export async function loadTransactions(
           id: a.id,
           name: a.name,
           institutionId: a.institutionId,
+          allowedPaymentRails: a.allowedPaymentRails ?? [],
         }));
       })(),
       creditCards: cards.map((card) => ({

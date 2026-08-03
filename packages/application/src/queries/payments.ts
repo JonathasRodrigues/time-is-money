@@ -6,9 +6,11 @@ import {
   estimatePayableCents,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
+  normalizeAllowedPaymentRails,
   resolvePayableKind,
   suggestAverageAmountCents,
   yearMonthFromIso,
+  type InstantAccountPaymentRail,
 } from '@tim/domain';
 import {
   accounts,
@@ -278,13 +280,14 @@ export async function loadPayments(
       };
     });
 
-  // Garante formas persistidas (legado / contas criadas antes da migration).
+  // Garante formas persistidas conforme allowedPaymentRails de cada conta.
   for (const account of accs) {
     if (account.isArchived) continue;
     await ensureAccountPaymentMethods(db, {
       householdId: session.householdId,
       accountId: account.id,
       kind: account.kind,
+      rails: account.allowedPaymentRails ?? [],
     });
   }
   for (const card of cards) {
@@ -310,7 +313,14 @@ export async function loadPayments(
   const tableAccountIds = new Set(tableAccounts.map((a) => a.id));
   const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = methodRows
     .filter((method) => {
-      if (method.type === 'account') return tableAccountIds.has(method.accountId);
+      if (method.type === 'account') {
+        if (!tableAccountIds.has(method.accountId)) return false;
+        const account = accountMap.get(method.accountId);
+        const allowed = new Set(normalizeAllowedPaymentRails(account?.allowedPaymentRails ?? []));
+        return (
+          method.paymentRail != null && allowed.has(method.paymentRail as InstantAccountPaymentRail)
+        );
+      }
       if (flow !== 'pay') return false;
       return (
         method.creditCardId != null &&

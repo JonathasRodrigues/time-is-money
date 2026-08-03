@@ -203,7 +203,7 @@ function PaymentsContent({ data }: { data: PaymentsResponse }): React.ReactEleme
                 title="Faturas de cartão"
                 description="Compras no crédito aparecem aqui agrupadas — quite o total com a conta"
               />
-              <div className="px-5">
+              <div className="px-0 sm:px-5">
                 <InvoicePayableGroups
                   today={today}
                   paymentMethods={lookups.paymentMethods}
