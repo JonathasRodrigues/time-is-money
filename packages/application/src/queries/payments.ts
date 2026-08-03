@@ -28,6 +28,7 @@ import type { AppContext } from '../context';
 import {
   closeDueCreditCardInvoices,
   INVOICE_OPENING_SOURCE,
+  linkOrphanCardPurchasesToInvoices,
   sumInvoiceBalanceCents,
 } from '../card-invoices';
 import { ensureAccountPaymentMethods, ensureCreditCardPaymentMethod } from '../payment-methods';
@@ -63,6 +64,8 @@ export async function loadPayments(
 
   if (flow === 'pay') {
     await closeDueCreditCardInvoices(ctx, today);
+    // Import antigo: compras no cartão sem ciclo — amarra antes de montar a lista.
+    await linkOrphanCardPurchasesToInvoices(ctx);
   }
 
   const [centers, cats, accs, cards, banks] = await Promise.all([

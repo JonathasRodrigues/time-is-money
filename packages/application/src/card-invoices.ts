@@ -1,6 +1,6 @@
 import { cardHasCredit, resolveInvoiceCycle, shouldCloseInvoice } from '@tim/domain';
 import { accounts, categories, creditCardInvoices, creditCards, transactions } from '@tim/db';
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AppContext } from './context.js';
 
 type DbTx = Parameters<Parameters<AppContext['db']['transaction']>[0]>[0];
@@ -359,6 +359,92 @@ export async function syncCardInvoiceOpeningBalance(
     creditCardId: input.card.id,
   });
   return 'synced';
+}
+
+/**
+ * Import / dados antigos: compra com `credit_card_id` mas sem `credit_card_invoice_id`.
+ * Amarra cada uma ao ciclo correto e recalcula o cache da fatura.
+ */
+export async function linkOrphanCardPurchasesToInvoices(
+  ctx: AppContext,
+): Promise<{ linked: number; cards: number }> {
+  const session = ctx.session;
+  if (!session?.householdId) return { linked: 0, cards: 0 };
+
+  const orphans = await ctx.db
+    .select({
+      id: transactions.id,
+      creditCardId: transactions.creditCardId,
+      paidOn: transactions.paidOn,
+      occurredOn: transactions.occurredOn,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.householdId, session.householdId),
+        isNull(transactions.deletedAt),
+        eq(transactions.type, 'expense'),
+        eq(transactions.status, 'paid'),
+        isNotNull(transactions.creditCardId),
+        isNull(transactions.creditCardInvoiceId),
+      ),
+    );
+
+  if (orphans.length === 0) return { linked: 0, cards: 0 };
+
+  const withCard = orphans.filter(
+    (row): row is typeof row & { creditCardId: string } => row.creditCardId != null,
+  );
+
+  const cardIds = [...new Set(withCard.map((row) => row.creditCardId))];
+  const cards = await ctx.db
+    .select()
+    .from(creditCards)
+    .where(
+      and(
+        eq(creditCards.householdId, session.householdId),
+        inArray(creditCards.id, cardIds),
+      ),
+    );
+  const cardById = new Map(cards.map((card) => [card.id, card]));
+
+  let linked = 0;
+  const touchedCards = new Set<string>();
+
+  for (const row of withCard) {
+    const card = cardById.get(row.creditCardId);
+    if (!card || !cardHasCredit(card.cardMode)) continue;
+
+    const purchaseOn = row.paidOn ?? row.occurredOn;
+    const invoice = await getOrCreateInvoiceForPurchase(ctx.db, {
+      householdId: session.householdId,
+      card,
+      purchaseOn,
+    });
+
+    await ctx.db
+      .update(transactions)
+      .set({ creditCardInvoiceId: invoice.id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(transactions.id, row.id),
+          eq(transactions.householdId, session.householdId),
+          isNull(transactions.creditCardInvoiceId),
+        ),
+      );
+
+    linked += 1;
+    touchedCards.add(card.id);
+  }
+
+  for (const creditCardId of touchedCards) {
+    await refreshCardInvoiceBalanceCache(ctx.db, {
+      householdId: session.householdId,
+      creditCardId,
+    });
+  }
+
+  return { linked, cards: touchedCards.size };
 }
 
 /** Cartões com saldo em cache e sem nenhum item: materializa saldo inicial. */

@@ -135,6 +135,7 @@ export type { AppContext } from './context';
 export {
   closeDueCreditCardInvoices,
   getOrCreateInvoiceForPurchase,
+  linkOrphanCardPurchasesToInvoices,
   materializeLegacyCardInvoiceBalances,
   refreshCardInvoiceBalanceCache,
   syncCardInvoiceOpeningBalance,
