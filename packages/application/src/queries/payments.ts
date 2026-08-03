@@ -280,7 +280,11 @@ export async function loadPayments(
   // Sincroniza payment_methods com allowed_payment_rails de cada conta.
   for (const account of accs) {
     if (account.isArchived) continue;
-    const rails = coerceAllowedPaymentRails(account.allowedPaymentRails);
+    // Caixinha não é forma de pagamento (domínio: rails []).
+    const rails =
+      account.kind === 'investment_pot'
+        ? []
+        : coerceAllowedPaymentRails(account.allowedPaymentRails);
     await ensureAccountPaymentMethods(db, {
       householdId: session.householdId,
       accountId: account.id,
@@ -322,7 +326,9 @@ export async function loadPayments(
   const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = [];
 
   // Só rails escolhidos em allowed_payment_rails — nunca “os 4” da tabela.
+  // Caixinha (investment_pot) não entra como forma de pagamento.
   for (const account of accs) {
+    if (account.kind === 'investment_pot') continue;
     if (account.isArchived && !pendingAccountIds.has(account.id)) continue;
     const rails = coerceAllowedPaymentRails(account.allowedPaymentRails);
     const institutionName = account.institutionId

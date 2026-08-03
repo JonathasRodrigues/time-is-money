@@ -68,8 +68,8 @@ export function NewTransactionSheet({
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
   const accountRails = useMemo((): PaymentRail[] => {
-    const allowed = selectedAccount?.allowedPaymentRails;
-    if (!allowed) return [...INSTANT_ACCOUNT_PAYMENT_RAILS];
+    // Sem config na conta = nenhuma rail (não inventar os 4 padrões).
+    const allowed = selectedAccount?.allowedPaymentRails ?? [];
     return INSTANT_ACCOUNT_PAYMENT_RAILS.filter((rail) => allowed.includes(rail));
   }, [selectedAccount?.allowedPaymentRails]);
 
