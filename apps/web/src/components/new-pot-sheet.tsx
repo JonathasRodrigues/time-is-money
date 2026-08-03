@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PiggyBank, Plus } from 'lucide-react';
 import { formatCentsForBrInput } from '@tim/domain';
+import { AccountPaymentRailsFields } from '@/components/account-payment-rails-fields';
 import { ActionForm } from '@/components/action-form';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -135,6 +136,8 @@ export function NewPotSheet({
               />
             </div>
           </div>
+
+          <AccountPaymentRailsFields idPrefix={`pot-${parentAccountId}`} defaultRails={[]} />
 
           <SubmitButton pendingLabel="Criando…">Criar reserva</SubmitButton>
         </ActionForm>

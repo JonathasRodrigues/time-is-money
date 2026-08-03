@@ -21,6 +21,7 @@ import {
   userPreferences,
 } from '@tim/db';
 import {
+  accountAllowsPaymentRail,
   assertAccountDebitBalance,
   assertCardPurchase,
   assertPayInvoice,
@@ -34,6 +35,7 @@ import {
   shiftYearMonth,
   yearMonthFromIso,
   type AmortizationSystem,
+  type InstantAccountPaymentRail,
 } from '@tim/domain';
 import type {
   CreateCreditCardInput,
@@ -90,6 +92,7 @@ import {
   getOrCreateInvoiceForPurchase,
   refreshCardInvoiceBalanceCache,
   sumInvoiceBalanceCents,
+  syncCardInvoiceOpeningBalance,
 } from './card-invoices';
 import {
   ensureCreditCardPaymentMethod,
@@ -132,7 +135,9 @@ export type { AppContext } from './context';
 export {
   closeDueCreditCardInvoices,
   getOrCreateInvoiceForPurchase,
+  materializeLegacyCardInvoiceBalances,
   refreshCardInvoiceBalanceCache,
+  syncCardInvoiceOpeningBalance,
 } from './card-invoices';
 
 function duplicateHash(input: {
@@ -747,53 +752,76 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
     paymentRail,
   });
 
-  if (creditCardId) {
-    assertCardPurchase({
-      type: input.type,
-      amountCents: input.amountCents ?? 0,
-    });
-    const [card] = await ctx.db
-      .select()
-      .from(creditCards)
-      .where(
-        and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
-      )
-      .limit(1);
-    if (!card) {
-      throw new Error('Cartão inválido');
-    }
-    assertCardPurchase({
-      type: input.type,
-      amountCents: input.amountCents ?? 1,
-      cardArchived: card.isArchived,
-    });
-  }
-
-  const isPaid = input.status === 'paid';
+  const leavingCredit = Boolean(tx.creditCardId) && creditCardId == null;
+  /** Crédito = compra na fatura (sempre paga no cartão). Conta após sair do crédito = pendente. */
+  const status = creditCardId ? 'paid' : leavingCredit ? 'pending' : input.status;
+  const isPaid = status === 'paid';
   const amountCents = input.amountCents ?? null;
   const dueOn = isPaid ? (tx.dueOn ?? input.date) : input.date;
   const paidOn = isPaid ? input.date : null;
   const occurredOn = input.date;
 
-  const prevInvoiceDelta =
-    tx.creditCardId && tx.status === 'paid' && tx.type === 'expense' && tx.amountCents != null
-      ? tx.amountCents
-      : 0;
-  const nextInvoiceDelta =
-    creditCardId && isPaid && input.type === 'expense' && amountCents != null ? amountCents : 0;
+  let resolvedAccountId = input.accountId;
+  let creditCardInvoiceId: string | null = null;
+
+  if (creditCardId) {
+    assertCardPurchase({
+      type: input.type,
+      amountCents: amountCents ?? 0,
+    });
+    if (!isPaid || input.type !== 'expense') {
+      throw new Error(
+        'Compra no cartão deve ser registrada como despesa já paga — entra na fatura do ciclo.',
+      );
+    }
+  }
+
+  const cardsToRefresh = new Set<string>();
+  if (tx.creditCardId) cardsToRefresh.add(tx.creditCardId);
+  if (creditCardId) cardsToRefresh.add(creditCardId);
 
   const row = await ctx.db.transaction(async (dbTx) => {
+    if (creditCardId) {
+      const [card] = await dbTx
+        .select()
+        .from(creditCards)
+        .where(
+          and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
+        )
+        .limit(1)
+        .for('update');
+      if (!card) {
+        throw new Error('Cartão inválido');
+      }
+      assertCardPurchase({
+        type: input.type,
+        amountCents: amountCents ?? 1,
+        cardArchived: card.isArchived,
+      });
+      if (!cardHasCredit(card.cardMode)) {
+        throw new Error('Cartão não possui crédito');
+      }
+      resolvedAccountId = card.paymentAccountId;
+      const invoice = await getOrCreateInvoiceForPurchase(dbTx, {
+        householdId: session.householdId,
+        card,
+        purchaseOn: occurredOn,
+      });
+      creditCardInvoiceId = invoice.id;
+    }
+
     const [updated] = await dbTx
       .update(transactions)
       .set({
         costCenterId: input.costCenterId,
         categoryId: input.categoryId,
-        accountId: input.accountId,
+        accountId: resolvedAccountId,
         creditCardId,
+        creditCardInvoiceId,
         paymentRail,
         paymentMethodId,
         type: input.type,
-        status: input.status,
+        status,
         amountCents,
         occurredOn,
         dueOn,
@@ -821,49 +849,11 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
         );
     }
 
-    // Ajusta fatura: remove efeito antigo e aplica o novo.
-    if (tx.creditCardId && prevInvoiceDelta > 0) {
-      const [oldCard] = await dbTx
-        .select()
-        .from(creditCards)
-        .where(
-          and(
-            eq(creditCards.id, tx.creditCardId),
-            eq(creditCards.householdId, session.householdId),
-          ),
-        )
-        .limit(1)
-        .for('update');
-      if (oldCard) {
-        await dbTx
-          .update(creditCards)
-          .set({
-            invoiceBalanceCents: Math.max(0, oldCard.invoiceBalanceCents - prevInvoiceDelta),
-            updatedAt: new Date(),
-          })
-          .where(eq(creditCards.id, oldCard.id));
-      }
-    }
-
-    if (creditCardId && nextInvoiceDelta > 0) {
-      const [newCard] = await dbTx
-        .select()
-        .from(creditCards)
-        .where(
-          and(eq(creditCards.id, creditCardId), eq(creditCards.householdId, session.householdId)),
-        )
-        .limit(1)
-        .for('update');
-      if (!newCard) {
-        throw new Error('Cartão inválido');
-      }
-      await dbTx
-        .update(creditCards)
-        .set({
-          invoiceBalanceCents: newCard.invoiceBalanceCents + nextInvoiceDelta,
-          updatedAt: new Date(),
-        })
-        .where(eq(creditCards.id, newCard.id));
+    for (const cardId of cardsToRefresh) {
+      await refreshCardInvoiceBalanceCache(dbTx, {
+        householdId: session.householdId,
+        creditCardId: cardId,
+      });
     }
 
     return updated;
@@ -875,10 +865,11 @@ export async function updateTransaction(ctx: AppContext, raw: UpdateTransactionI
     resourceId: tx.id,
     metadata: {
       type: input.type,
-      status: input.status,
+      status,
       amountCents,
       date: input.date,
       creditCardId,
+      creditCardInvoiceId,
       paymentRail,
     },
   });
@@ -1088,10 +1079,20 @@ export async function payTransaction(ctx: AppContext, raw: PayTransactionInput) 
       throw new Error('Conta está arquivada');
     }
 
+    const paymentRail = input.paymentRail ?? 'pix';
+    if (
+      !accountAllowsPaymentRail(
+        account.allowedPaymentRails as InstantAccountPaymentRail[],
+        paymentRail,
+      )
+    ) {
+      throw new Error('Forma de pagamento não permitida nesta conta');
+    }
+
     // Conta + PIX/débito/TED (e receber): move saldo por padrão. Crédito não.
     const applyToBalance = paymentMethodMovesAccountBalance({
       type: 'account',
-      paymentRail: input.paymentRail ?? 'pix',
+      paymentRail,
     })
       ? (input.applyToBalance ?? true)
       : false;
@@ -1725,6 +1726,16 @@ export async function createCreditCard(ctx: AppContext, raw: CreateCreditCardInp
       paymentAccountId: input.paymentAccountId,
       cardMode: input.cardMode,
     });
+    if (input.cardMode !== 'debit' && input.invoiceBalanceCents > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await syncCardInvoiceOpeningBalance(ctx.db, {
+        householdId: session.householdId,
+        userId: session.userId,
+        card: row,
+        targetBalanceCents: input.invoiceBalanceCents,
+        purchaseOn: today,
+      });
+    }
   }
 
   await writeAudit(ctx, {
@@ -1805,6 +1816,14 @@ export async function updateCreditCard(ctx: AppContext, raw: UpdateCreditCardInp
       paymentAccountId: row.paymentAccountId,
       cardMode: row.cardMode,
     });
+    const today = new Date().toISOString().slice(0, 10);
+    await syncCardInvoiceOpeningBalance(ctx.db, {
+      householdId: session.householdId,
+      userId: session.userId,
+      card: row,
+      targetBalanceCents: input.cardMode === 'debit' ? 0 : input.invoiceBalanceCents,
+      purchaseOn: today,
+    });
   }
 
   await writeAudit(ctx, {
@@ -1850,6 +1869,16 @@ export async function payCreditCardInvoice(ctx: AppContext, raw: PayCreditCardIn
       .for('update');
     if (!account) {
       throw new Error('Conta de pagamento não encontrada');
+    }
+
+    const invoicePaymentRail = input.paymentRail ?? 'pix';
+    if (
+      !accountAllowsPaymentRail(
+        account.allowedPaymentRails as InstantAccountPaymentRail[],
+        invoicePaymentRail,
+      )
+    ) {
+      throw new Error('Forma de pagamento não permitida nesta conta');
     }
 
     const [invoice] = await dbTx
@@ -1909,7 +1938,7 @@ export async function payCreditCardInvoice(ctx: AppContext, raw: PayCreditCardIn
         accountId: account.id,
         creditCardId: null,
         creditCardInvoiceId: null,
-        paymentRail: input.paymentRail ?? 'pix',
+        paymentRail: invoicePaymentRail,
         type: 'expense',
         status: 'paid',
         amountCents: input.amountCents,
@@ -2425,6 +2454,7 @@ export async function createPlan(ctx: AppContext, raw: CreatePlanInput) {
         kind: 'investment_pot',
         balanceCents: 0,
         yieldType: 'none',
+        allowedPaymentRails: [],
       })
       .returning();
     if (!account) {

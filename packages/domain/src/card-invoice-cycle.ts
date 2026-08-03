@@ -94,6 +94,40 @@ export const INSTANT_ACCOUNT_PAYMENT_RAILS = ['pix', 'debit', 'ted', 'boleto'] a
 
 export type InstantAccountPaymentRail = (typeof INSTANT_ACCOUNT_PAYMENT_RAILS)[number];
 
+const INSTANT_RAIL_SET = new Set<string>(INSTANT_ACCOUNT_PAYMENT_RAILS);
+
+/** Default ao criar conta: caixinha sem formas; demais com os 4 rails. */
+export function defaultAllowedPaymentRails(
+  kind: 'cash' | 'checking' | 'savings' | 'investment_pot',
+): InstantAccountPaymentRail[] {
+  if (kind === 'investment_pot') return [];
+  return [...INSTANT_ACCOUNT_PAYMENT_RAILS];
+}
+
+/** Mantém só rails instantâneos válidos e únicos (ordem estável). */
+export function normalizeAllowedPaymentRails(
+  rails: readonly string[],
+): InstantAccountPaymentRail[] {
+  const seen = new Set<InstantAccountPaymentRail>();
+  const result: InstantAccountPaymentRail[] = [];
+  for (const rail of rails) {
+    if (!INSTANT_RAIL_SET.has(rail)) continue;
+    const typed = rail as InstantAccountPaymentRail;
+    if (seen.has(typed)) continue;
+    seen.add(typed);
+    result.push(typed);
+  }
+  return result;
+}
+
+export function accountAllowsPaymentRail(
+  allowedRails: readonly InstantAccountPaymentRail[],
+  paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null | undefined,
+): boolean {
+  const rail = paymentRail ?? 'pix';
+  return (allowedRails as readonly string[]).includes(rail);
+}
+
 /**
  * Conta + PIX/débito/TED/boleto: move saldo agora.
  * Crédito: só fatura. Dinheiro: não mexe em conta bancária.

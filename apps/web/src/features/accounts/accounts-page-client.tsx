@@ -99,6 +99,7 @@ function PotTile({
             balanceCents: pot.balanceCents,
             yieldType: pot.yieldType as YieldType,
             yieldBps: pot.yieldBps,
+            allowedPaymentRails: pot.allowedPaymentRails,
           }}
           centers={centers}
           banks={banks}
@@ -400,6 +401,7 @@ function BankInstitutionCard({
                               balanceCents: root.balanceCents,
                               yieldType: root.yieldType as YieldType,
                               yieldBps: root.yieldBps,
+                              allowedPaymentRails: root.allowedPaymentRails,
                             }}
                             centers={centers}
                             banks={banks}

@@ -344,6 +344,7 @@ export function createMockStore(): MockStore {
               yieldType: 'none',
               yieldBps: null,
               yieldLabel: 'Sem rendimento',
+              allowedPaymentRails: ['pix', 'debit', 'ted', 'boleto'],
               isChild: false,
             },
           ],
@@ -367,6 +368,7 @@ export function createMockStore(): MockStore {
               yieldType: 'none',
               yieldBps: null,
               yieldLabel: 'Sem rendimento',
+              allowedPaymentRails: ['pix', 'debit', 'ted', 'boleto'],
               isChild: false,
             },
             {
@@ -381,6 +383,7 @@ export function createMockStore(): MockStore {
               yieldType: 'cdi',
               yieldBps: 10_000,
               yieldLabel: '100% CDI',
+              allowedPaymentRails: [],
               isChild: true,
             },
           ],

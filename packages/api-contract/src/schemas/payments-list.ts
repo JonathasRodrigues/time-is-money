@@ -22,7 +22,15 @@ export const paymentsQuerySchema = dateRangeQuerySchema.extend({
 export const invoicePurchaseSchema = z.object({
   id: z.string().uuid(),
   description: z.string().nullable(),
+  kind: payableKindSchema,
+  costCenterId: z.string().uuid().nullable(),
+  costCenterName: z.string(),
+  categoryId: z.string().uuid().nullable(),
   categoryName: z.string(),
+  accountId: z.string().uuid(),
+  paymentRail: z.enum(['pix', 'debit', 'ted', 'boleto', 'cash', 'other']).nullable(),
+  creditCardId: z.string().uuid().nullable(),
+  creditCardInvoiceId: z.string().uuid().nullable(),
   occurredOn: isoDateSchema.nullable(),
   amountCents: z.number().int(),
 });

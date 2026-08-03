@@ -223,7 +223,15 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
     purchases: Array<{
       id: string;
       description: string | null;
+      kind: 'fixed' | 'variable' | 'installment';
+      costCenterId: string | null;
+      costCenterName: string;
+      categoryId: string | null;
       categoryName: string;
+      accountId: string;
+      paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null;
+      creditCardId: string | null;
+      creditCardInvoiceId: string | null;
       occurredOn: string | null;
       amountCents: number;
     }>;
@@ -287,14 +295,30 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
         {
           id: '00000000-0000-4000-8000-0000000000b1',
           description: 'Mercado',
-          categoryName: 'Mercado',
+          kind: 'variable',
+          costCenterId: MOCK_IDS.costCenterPf,
+          costCenterName: 'PF',
+          categoryId: MOCK_IDS.categorySupermercado,
+          categoryName: 'Supermercado',
+          accountId: mockCard.paymentAccountId,
+          paymentRail: null,
+          creditCardId: mockCard.id,
+          creditCardInvoiceId: mockCard.id,
           occurredOn: today,
           amountCents: 800_00,
         },
         {
           id: '00000000-0000-4000-8000-0000000000b2',
           description: 'Streaming',
-          categoryName: 'Assinaturas',
+          kind: 'variable',
+          costCenterId: MOCK_IDS.costCenterPf,
+          costCenterName: 'PF',
+          categoryId: MOCK_IDS.categoryLazer,
+          categoryName: 'Lazer',
+          accountId: mockCard.paymentAccountId,
+          paymentRail: null,
+          creditCardId: mockCard.id,
+          creditCardInvoiceId: mockCard.id,
           occurredOn: today,
           amountCents: 400_00,
         },
@@ -384,18 +408,20 @@ function buildPaymentsResponse(store: MockStore, searchParams: URLSearchParams):
         },
       ],
       paymentMethods: [
-        ...tableAccounts.flatMap((account) =>
-          (['pix', 'debit', 'ted', 'boleto'] as const).map((rail, index) => ({
-            id: `00000000-0000-4000-8000-${`${account.id.replace(/-/g, '')}${index}`.padEnd(12, '0').slice(0, 12)}`,
-            type: 'account' as const,
-            accountId: account.id,
-            creditCardId: null,
-            paymentRail: rail,
-            linkedAccountName: account.name,
-            linkedInstitutionName: 'Nubank',
-            balanceCents: accountBalanceById.get(account.id) ?? 0,
-            label: `${rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'} · ${account.name} · Nubank`,
-          })),
+        ...store.accounts.bankSections.flatMap((section) =>
+          section.accounts.flatMap((account) =>
+            account.allowedPaymentRails.map((rail, index) => ({
+              id: `00000000-0000-4000-8000-${`${account.id.replace(/-/g, '')}${index}`.padEnd(12, '0').slice(0, 12)}`,
+              type: 'account' as const,
+              accountId: account.id,
+              creditCardId: null,
+              paymentRail: rail,
+              linkedAccountName: account.name,
+              linkedInstitutionName: section.title === 'Sem banco' ? null : section.title,
+              balanceCents: accountBalanceById.get(account.id) ?? 0,
+              label: `${rail === 'pix' ? 'PIX' : rail === 'debit' ? 'Débito' : rail === 'ted' ? 'TED' : 'Boleto'} · ${account.name}${section.title === 'Sem banco' ? '' : ` · ${section.title}`}`,
+            })),
+          ),
         ),
         {
           id: `00000000-0000-4000-8000-${mockCard.id.replace(/-/g, '').padEnd(12, '0').slice(0, 12)}`,
@@ -920,6 +946,7 @@ export async function handleMockApiRequest<T>(
         yieldType: 'none',
         yieldBps: null,
         yieldLabel: 'Sem rendimento',
+        allowedPaymentRails: ['pix', 'debit', 'ted', 'boleto'],
         isChild: false,
       });
       store.bootstrap.accounts.push({
@@ -981,6 +1008,7 @@ export async function handleMockApiRequest<T>(
           yieldType: 'none',
           yieldBps: null,
           yieldLabel: 'Sem rendimento',
+          allowedPaymentRails: ['pix', 'debit', 'ted', 'boleto'],
           isChild: false,
         },
         ...savingsAccounts,

@@ -1,34 +1,110 @@
 import { paymentMethods, type DbClient } from '@tim/db';
-import { INSTANT_ACCOUNT_PAYMENT_RAILS, cardHasCredit, type CardMode } from '@tim/domain';
-import { and, eq, isNull } from 'drizzle-orm';
+import {
+  INSTANT_ACCOUNT_PAYMENT_RAILS,
+  cardHasCredit,
+  defaultAllowedPaymentRails,
+  normalizeAllowedPaymentRails,
+  type CardMode,
+  type InstantAccountPaymentRail,
+} from '@tim/domain';
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 
 const BALANCE_ACCOUNT_KINDS = new Set(['checking', 'savings', 'cash']);
 
-/** Cria meios PIX/débito/TED/boleto para uma conta que move saldo. */
+/**
+ * Sincroniza meios account+rail com a lista permitida da conta.
+ * Rails ausentes são arquivados; rails marcados são criados/desarquivados.
+ */
+export async function syncAccountPaymentMethods(
+  db: DbClient,
+  input: {
+    householdId: string;
+    accountId: string;
+    rails: readonly InstantAccountPaymentRail[];
+  },
+): Promise<void> {
+  const rails = normalizeAllowedPaymentRails(input.rails);
+  const now = new Date();
+
+  if (rails.length > 0) {
+    await db
+      .insert(paymentMethods)
+      .values(
+        rails.map((rail) => ({
+          householdId: input.householdId,
+          type: 'account' as const,
+          accountId: input.accountId,
+          creditCardId: null,
+          paymentRail: rail,
+          isArchived: false,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [paymentMethods.accountId, paymentMethods.paymentRail],
+      });
+
+    await db
+      .update(paymentMethods)
+      .set({ isArchived: false, updatedAt: now })
+      .where(
+        and(
+          eq(paymentMethods.householdId, input.householdId),
+          eq(paymentMethods.type, 'account'),
+          eq(paymentMethods.accountId, input.accountId),
+          inArray(paymentMethods.paymentRail, rails),
+        ),
+      );
+
+    await db
+      .update(paymentMethods)
+      .set({ isArchived: true, updatedAt: now })
+      .where(
+        and(
+          eq(paymentMethods.householdId, input.householdId),
+          eq(paymentMethods.type, 'account'),
+          eq(paymentMethods.accountId, input.accountId),
+          notInArray(paymentMethods.paymentRail, rails),
+        ),
+      );
+    return;
+  }
+
+  await db
+    .update(paymentMethods)
+    .set({ isArchived: true, updatedAt: now })
+    .where(
+      and(
+        eq(paymentMethods.householdId, input.householdId),
+        eq(paymentMethods.type, 'account'),
+        eq(paymentMethods.accountId, input.accountId),
+      ),
+    );
+}
+
+/** Cria meios PIX/débito/TED/boleto para uma conta (ou os rails informados). */
 export async function ensureAccountPaymentMethods(
   db: DbClient,
   input: {
     householdId: string;
     accountId: string;
     kind: string;
+    rails?: readonly InstantAccountPaymentRail[];
   },
 ): Promise<void> {
-  if (!BALANCE_ACCOUNT_KINDS.has(input.kind)) return;
+  const rails =
+    input.rails !== undefined
+      ? normalizeAllowedPaymentRails(input.rails)
+      : BALANCE_ACCOUNT_KINDS.has(input.kind)
+        ? defaultAllowedPaymentRails(
+            input.kind as 'cash' | 'checking' | 'savings' | 'investment_pot',
+          )
+        : [];
 
-  await db
-    .insert(paymentMethods)
-    .values(
-      INSTANT_ACCOUNT_PAYMENT_RAILS.map((rail) => ({
-        householdId: input.householdId,
-        type: 'account' as const,
-        accountId: input.accountId,
-        creditCardId: null,
-        paymentRail: rail,
-      })),
-    )
-    .onConflictDoNothing({
-      target: [paymentMethods.accountId, paymentMethods.paymentRail],
-    });
+  await syncAccountPaymentMethods(db, {
+    householdId: input.householdId,
+    accountId: input.accountId,
+    rails,
+  });
 }
 
 /** Cria forma de crédito para o cartão (quando tem crédito). */
@@ -128,3 +204,6 @@ export async function findCreditCardPaymentMethod(
     .limit(1);
   return row ?? null;
 }
+
+/** @internal — mantém a constante exportável para seeds legados. */
+export const ACCOUNT_PAYMENT_RAILS = INSTANT_ACCOUNT_PAYMENT_RAILS;

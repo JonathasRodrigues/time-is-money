@@ -1,6 +1,10 @@
 import { requireCapability, requireSession } from '@tim/auth';
 import { accounts, categories, costCenters, creditCards, institutions } from '@tim/db';
-import { resolveBankCatalogName } from '@tim/domain';
+import {
+  defaultAllowedPaymentRails,
+  normalizeAllowedPaymentRails,
+  resolveBankCatalogName,
+} from '@tim/domain';
 import {
   createAccountSchema,
   createCategorySchema,
@@ -12,8 +16,13 @@ import {
   updateInstitutionSchema,
 } from '@tim/validators';
 import { and, eq } from 'drizzle-orm';
+import { syncCardInvoiceOpeningBalance } from '../card-invoices.js';
 import type { AppContext } from '../context.js';
-import { ensureAccountPaymentMethods } from '../payment-methods.js';
+import {
+  ensureAccountPaymentMethods,
+  ensureCreditCardPaymentMethod,
+  syncAccountPaymentMethods,
+} from '../payment-methods.js';
 
 export async function createCostCenter(ctx: AppContext, raw: unknown) {
   const session = requireSession(ctx.session);
@@ -97,39 +106,81 @@ export async function setupBank(ctx: AppContext, raw: unknown) {
         balanceCents: input.balanceCents,
         yieldType: 'none',
         yieldBps: null,
+        allowedPaymentRails: defaultAllowedPaymentRails('checking'),
       })
       .returning();
     if (!account) {
       throw new Error('Falha ao criar conta corrente');
     }
 
+    await ensureAccountPaymentMethods(tx, {
+      householdId: session.householdId,
+      accountId: account.id,
+      kind: 'checking',
+      rails: defaultAllowedPaymentRails('checking'),
+    });
+
     if (input.includeSavings) {
-      await tx.insert(accounts).values({
-        householdId: session.householdId,
-        costCenterId: input.costCenterId,
-        name: input.savingsName!.trim(),
-        institutionId: institution.id,
-        kind: 'savings',
-        balanceCents: input.savingsBalanceCents,
-        yieldType: 'none',
-        yieldBps: null,
-      });
+      const [savings] = await tx
+        .insert(accounts)
+        .values({
+          householdId: session.householdId,
+          costCenterId: input.costCenterId,
+          name: input.savingsName!.trim(),
+          institutionId: institution.id,
+          kind: 'savings',
+          balanceCents: input.savingsBalanceCents,
+          yieldType: 'none',
+          yieldBps: null,
+          allowedPaymentRails: defaultAllowedPaymentRails('savings'),
+        })
+        .returning();
+      if (savings) {
+        await ensureAccountPaymentMethods(tx, {
+          householdId: session.householdId,
+          accountId: savings.id,
+          kind: 'savings',
+          rails: defaultAllowedPaymentRails('savings'),
+        });
+      }
     }
 
     if (input.includeCreditCard) {
       const isDebitOnly = input.cardMode === 'debit';
-      await tx.insert(creditCards).values({
-        householdId: session.householdId,
-        institutionId: institution.id,
-        paymentAccountId: account.id,
-        name: input.cardName!.trim(),
-        cardMode: input.cardMode,
-        lastFour: input.cardLastFour ?? null,
-        creditLimitCents: isDebitOnly ? 0 : input.creditLimitCents,
-        invoiceBalanceCents: isDebitOnly ? 0 : input.invoiceBalanceCents,
-        closingDay: isDebitOnly ? 1 : input.closingDay,
-        dueDay: isDebitOnly ? 1 : input.dueDay,
-      });
+      const [card] = await tx
+        .insert(creditCards)
+        .values({
+          householdId: session.householdId,
+          institutionId: institution.id,
+          paymentAccountId: account.id,
+          name: input.cardName!.trim(),
+          cardMode: input.cardMode,
+          lastFour: input.cardLastFour ?? null,
+          creditLimitCents: isDebitOnly ? 0 : input.creditLimitCents,
+          invoiceBalanceCents: isDebitOnly ? 0 : input.invoiceBalanceCents,
+          closingDay: isDebitOnly ? 1 : input.closingDay,
+          dueDay: isDebitOnly ? 1 : input.dueDay,
+        })
+        .returning();
+
+      if (card) {
+        await ensureCreditCardPaymentMethod(tx, {
+          householdId: session.householdId,
+          creditCardId: card.id,
+          paymentAccountId: account.id,
+          cardMode: input.cardMode,
+        });
+        if (!isDebitOnly && input.invoiceBalanceCents > 0) {
+          const today = new Date().toISOString().slice(0, 10);
+          await syncCardInvoiceOpeningBalance(tx, {
+            householdId: session.householdId,
+            userId: session.userId,
+            card,
+            targetBalanceCents: input.invoiceBalanceCents,
+            purchaseOn: today,
+          });
+        }
+      }
     }
   });
 }
@@ -161,6 +212,10 @@ export async function createAccount(ctx: AppContext, raw: unknown): Promise<{ id
   const session = requireSession(ctx.session);
   requireCapability(session, 'settings.write');
   const input = createAccountSchema.parse({ ...(raw as object), householdId: session.householdId });
+  const allowedPaymentRails =
+    input.allowedPaymentRails !== undefined
+      ? normalizeAllowedPaymentRails(input.allowedPaymentRails)
+      : defaultAllowedPaymentRails(input.kind);
   const [created] = await ctx.db
     .insert(accounts)
     .values({
@@ -173,6 +228,7 @@ export async function createAccount(ctx: AppContext, raw: unknown): Promise<{ id
       balanceCents: input.balanceCents,
       yieldType: input.yieldType,
       yieldBps: input.yieldBps ?? null,
+      allowedPaymentRails,
     })
     .returning();
   if (!created) {
@@ -182,6 +238,7 @@ export async function createAccount(ctx: AppContext, raw: unknown): Promise<{ id
     householdId: input.householdId,
     accountId: created.id,
     kind: input.kind,
+    rails: allowedPaymentRails,
   });
   return { id: created.id };
 }
@@ -210,6 +267,7 @@ export async function updateAccount(ctx: AppContext, accountId: string, raw: unk
       balanceCents: input.balanceCents,
       yieldType: input.yieldType,
       yieldBps: input.yieldType === 'none' ? null : (input.yieldBps ?? null),
+      allowedPaymentRails: normalizeAllowedPaymentRails(input.allowedPaymentRails),
       updatedAt: new Date(),
     })
     .where(and(eq(accounts.id, input.accountId), eq(accounts.householdId, session.householdId)))
@@ -217,6 +275,12 @@ export async function updateAccount(ctx: AppContext, accountId: string, raw: unk
   if (!updated) {
     throw new Error('Conta não encontrada');
   }
+
+  await syncAccountPaymentMethods(ctx.db, {
+    householdId: session.householdId,
+    accountId: input.accountId,
+    rails: normalizeAllowedPaymentRails(input.allowedPaymentRails),
+  });
 }
 
 export async function updateAccountBalance(ctx: AppContext, accountId: string, raw: unknown) {

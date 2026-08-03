@@ -685,3 +685,6 @@ WHERE s."default_payment_method_id" IS NULL
   AND pm."type" = 'account'
   AND pm."account_id" = s."account_id"
   AND pm."payment_rail" = COALESCE(s."default_payment_rail", 'pix');
+
+-- ===== 0016_account_payment_rails.sql =====
+ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "allowed_payment_rails" jsonb DEFAULT '["pix","debit","ted","boleto"]'::jsonb NOT NULL;

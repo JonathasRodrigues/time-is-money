@@ -1,4 +1,9 @@
-import { availableCreditCents, formatYieldLabel, type YieldType } from '@tim/domain';
+import {
+  availableCreditCents,
+  formatYieldLabel,
+  normalizeAllowedPaymentRails,
+  type YieldType,
+} from '@tim/domain';
 import type { AccountsResponse } from '@tim/api-contract';
 import { accounts, costCenters, creditCards, institutions } from '@tim/db';
 import { and, eq } from 'drizzle-orm';
@@ -110,6 +115,7 @@ export async function loadAccounts(ctx: AppContext): Promise<AccountsResponse> {
           row.yieldType as AccountsResponse['bankSections'][number]['accounts'][number]['yieldType'],
         yieldBps: row.yieldBps,
         yieldLabel: formatYieldLabel(yieldType, row.yieldBps),
+        allowedPaymentRails: normalizeAllowedPaymentRails(row.allowedPaymentRails ?? []),
         isChild,
       };
     });

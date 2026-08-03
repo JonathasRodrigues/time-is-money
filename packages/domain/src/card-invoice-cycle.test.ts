@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  accountAllowsPaymentRail,
+  defaultAllowedPaymentRails,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
+  normalizeAllowedPaymentRails,
   paymentMethodMovesAccountBalance,
   resolveInvoiceCycle,
   shouldCloseInvoice,
@@ -89,5 +92,17 @@ describe('payment method labels', () => {
     expect(paymentMethodMovesAccountBalance({ type: 'account', paymentRail: 'boleto' })).toBe(true);
     expect(paymentMethodMovesAccountBalance({ type: 'credit_card' })).toBe(false);
     expect(paymentMethodMovesAccountBalance({ type: 'account', paymentRail: 'cash' })).toBe(false);
+  });
+
+  it('define rails padrão por tipo de conta', () => {
+    expect(defaultAllowedPaymentRails('checking')).toEqual(['pix', 'debit', 'ted', 'boleto']);
+    expect(defaultAllowedPaymentRails('investment_pot')).toEqual([]);
+  });
+
+  it('normaliza e valida rails permitidos', () => {
+    expect(normalizeAllowedPaymentRails(['pix', 'pix', 'cash', 'ted'])).toEqual(['pix', 'ted']);
+    expect(accountAllowsPaymentRail(['pix'], 'pix')).toBe(true);
+    expect(accountAllowsPaymentRail(['pix'], 'debit')).toBe(false);
+    expect(accountAllowsPaymentRail([], 'pix')).toBe(false);
   });
 });

@@ -10,6 +10,8 @@ export const institutionSchema = z.object({
   name: z.string(),
 });
 
+export const instantAccountPaymentRailSchema = z.enum(['pix', 'debit', 'ted', 'boleto']);
+
 export const accountsAccountSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -22,6 +24,7 @@ export const accountsAccountSchema = z.object({
   yieldType: yieldTypeSchema,
   yieldBps: z.number().int().nullable(),
   yieldLabel: z.string(),
+  allowedPaymentRails: z.array(instantAccountPaymentRailSchema),
   isChild: z.boolean(),
 });
 

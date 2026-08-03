@@ -173,6 +173,14 @@ export const accounts = pgTable('accounts', {
    * fixed_annual: taxa a.a. em bps (1200 = 12% a.a.).
    */
   yieldBps: integer('yield_bps'),
+  /**
+   * Rails da conta usados em Contas a pagar (PIX/débito/TED/boleto).
+   * Array vazio = conta só para saldo/reserva (não aparece como forma).
+   */
+  allowedPaymentRails: jsonb('allowed_payment_rails')
+    .$type<Array<'pix' | 'debit' | 'ted' | 'boleto'>>()
+    .notNull()
+    .default(['pix', 'debit', 'ted', 'boleto']),
   isArchived: boolean('is_archived').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

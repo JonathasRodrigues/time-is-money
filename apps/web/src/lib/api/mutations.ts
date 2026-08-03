@@ -3,10 +3,12 @@
  */
 import {
   dueOnForMonth,
+  INSTANT_ACCOUNT_PAYMENT_RAILS,
   normalizeMoneyFormValue,
   parseBrlToCents,
   shiftYearMonth,
   yearMonthFromIso,
+  type InstantAccountPaymentRail,
 } from '@tim/domain';
 import {
   planKindSchema,
@@ -43,6 +45,14 @@ function optionalMoneyCentsFromForm(formData: FormData, key: string): number | n
   return parseBrlToCents(raw);
 }
 
+function parseAllowedPaymentRailsFromForm(
+  formData: FormData,
+): InstantAccountPaymentRail[] | undefined {
+  if (formData.get('allowedPaymentRailsConfigured') !== '1') return undefined;
+  const selected = new Set(formData.getAll('allowedPaymentRails').map(String));
+  return INSTANT_ACCOUNT_PAYMENT_RAILS.filter((rail) => selected.has(rail));
+}
+
 function parseAccountFormFields(formData: FormData): {
   kind: AccountKind;
   yieldType: 'none' | 'cdi' | 'fixed_annual';
@@ -52,6 +62,7 @@ function parseAccountFormFields(formData: FormData): {
   parentAccountId: string | null;
   name: string;
   costCenterId: string;
+  allowedPaymentRails?: InstantAccountPaymentRail[];
 } {
   const balanceRaw = str(formData, 'balance').trim();
   const yieldRaw = str(formData, 'yieldValue').trim();
@@ -68,6 +79,8 @@ function parseAccountFormFields(formData: FormData): {
     yieldBps = Math.round(Number(yieldRaw.replace(',', '.')) * 100);
   }
 
+  const allowedPaymentRails = parseAllowedPaymentRailsFromForm(formData);
+
   return {
     kind,
     yieldType,
@@ -77,6 +90,7 @@ function parseAccountFormFields(formData: FormData): {
     parentAccountId: formData.get('parentAccountId') ? str(formData, 'parentAccountId') : null,
     name: str(formData, 'name'),
     costCenterId: str(formData, 'costCenterId'),
+    ...(allowedPaymentRails !== undefined ? { allowedPaymentRails } : {}),
   };
 }
 
@@ -295,7 +309,11 @@ export async function createBankAccountsAction(formData: FormData): Promise<void
 }
 
 export async function updateAccountAction(formData: FormData): Promise<void> {
-  await api.accounts.update(str(formData, 'accountId'), parseAccountFormFields(formData));
+  const fields = parseAccountFormFields(formData);
+  await api.accounts.update(str(formData, 'accountId'), {
+    ...fields,
+    allowedPaymentRails: fields.allowedPaymentRails ?? [],
+  });
 }
 
 export async function updateAccountBalanceAction(formData: FormData): Promise<void> {

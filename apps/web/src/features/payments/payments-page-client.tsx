@@ -70,7 +70,15 @@ function PaymentsContent({ data }: { data: PaymentsResponse }): React.ReactEleme
         purchases: (row.purchases ?? []).map((purchase) => ({
           id: purchase.id,
           description: purchase.description,
+          kind: purchase.kind,
+          costCenterId: purchase.costCenterId,
+          costCenterName: purchase.costCenterName,
+          categoryId: purchase.categoryId,
           categoryName: purchase.categoryName,
+          accountId: purchase.accountId,
+          paymentRail: purchase.paymentRail,
+          creditCardId: purchase.creditCardId,
+          creditCardInvoiceId: purchase.creditCardInvoiceId,
           occurredOn: purchase.occurredOn,
           amountCents: purchase.amountCents,
         })),
@@ -199,6 +207,8 @@ function PaymentsContent({ data }: { data: PaymentsResponse }): React.ReactEleme
                 <InvoicePayableGroups
                   today={today}
                   paymentMethods={lookups.paymentMethods}
+                  centers={lookups.centers}
+                  categories={lookups.expenseCategories}
                   invoices={invoices}
                 />
               </div>

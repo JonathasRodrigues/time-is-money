@@ -274,6 +274,7 @@ ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "kind" "account_kind" DEFAULT 'c
 ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "balance_cents" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "yield_type" "yield_type" DEFAULT 'none' NOT NULL;
 ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "yield_bps" integer;
+ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "allowed_payment_rails" jsonb DEFAULT '["pix","debit","ted","boleto"]'::jsonb NOT NULL;
 ALTER TABLE "accounts" ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone DEFAULT now() NOT NULL;
 DO $$ BEGIN
   ALTER TABLE "accounts" ADD CONSTRAINT "accounts_institution_id_institutions_id_fk" FOREIGN KEY ("institution_id") REFERENCES "public"."institutions"("id") ON DELETE set null ON UPDATE no action;

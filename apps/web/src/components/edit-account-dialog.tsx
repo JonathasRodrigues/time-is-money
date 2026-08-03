@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountKind, YieldType } from '@tim/domain';
+import type { AccountKind, InstantAccountPaymentRail, YieldType } from '@tim/domain';
 import { formatCentsForBrInput } from '@tim/domain';
 import { Pencil } from 'lucide-react';
+import { AccountPaymentRailsFields } from '@/components/account-payment-rails-fields';
 import { ActionForm } from '@/components/action-form';
 import { nativeSelectClassName } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ export function EditAccountDialog({
     balanceCents: number;
     yieldType: YieldType;
     yieldBps: number | null;
+    allowedPaymentRails: InstantAccountPaymentRail[];
   };
   centers: Option[];
   banks: Option[];
@@ -73,7 +75,7 @@ export function EditAccountDialog({
         <DialogHeader>
           <DialogTitle>Editar conta</DialogTitle>
           <DialogDescription>
-            Altere nome, banco, centro, tipo, saldo e rendimento.
+            Altere nome, banco, centro, tipo, saldo, rendimento e formas de pagamento.
           </DialogDescription>
         </DialogHeader>
         <ActionForm
@@ -190,6 +192,10 @@ export function EditAccountDialog({
               placeholder="100 = 100% CDI · 13,15 = 13,15% a.a."
             />
           </div>
+          <AccountPaymentRailsFields
+            idPrefix={`edit-${account.id}`}
+            defaultRails={account.allowedPaymentRails}
+          />
           <SubmitButton className="sm:col-span-2" pendingLabel="Salvando…">
             Salvar alterações
           </SubmitButton>

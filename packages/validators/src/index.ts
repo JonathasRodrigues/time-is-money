@@ -21,6 +21,11 @@ export const transactionStatusSchema = z.enum(['pending', 'paid']);
 
 export const paymentRailSchema = z.enum(['pix', 'debit', 'ted', 'boleto', 'cash', 'other']);
 
+export const instantAccountPaymentRailSchema = z.enum(['pix', 'debit', 'ted', 'boleto']);
+
+/** Rails permitidos na conta; array vazio = sem formas de pagamento. */
+export const allowedPaymentRailsSchema = z.array(instantAccountPaymentRailSchema);
+
 export const accountKindSchema = z.enum(['cash', 'checking', 'savings', 'investment_pot']);
 
 export const cardModeSchema = z.enum(['credit', 'debit', 'both']);
@@ -188,6 +193,7 @@ export const createAccountSchema = z.object({
   balanceCents: z.number().int().min(0).default(0),
   yieldType: z.enum(['none', 'cdi', 'fixed_annual']).default('none'),
   yieldBps: z.number().int().min(0).max(100_000).nullable().optional(),
+  allowedPaymentRails: allowedPaymentRailsSchema.optional(),
 });
 
 export const createInstitutionSchema = z.object({
@@ -267,6 +273,7 @@ export const updateAccountSchema = z.object({
   balanceCents: z.number().int().min(0),
   yieldType: z.enum(['none', 'cdi', 'fixed_annual']),
   yieldBps: z.number().int().min(0).max(100_000).nullable().optional(),
+  allowedPaymentRails: allowedPaymentRailsSchema,
 });
 
 export const createCreditCardSchema = z.object({

@@ -720,14 +720,18 @@ export {
 } from './wealth';
 
 export {
+  accountAllowsPaymentRail,
+  defaultAllowedPaymentRails,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
   INSTANT_ACCOUNT_PAYMENT_RAILS,
+  normalizeAllowedPaymentRails,
   paymentMethodMovesAccountBalance,
   resolveInvoiceCycle,
   shouldCloseInvoice,
   type CardInvoiceCycle,
   type CreditCardInvoiceStatus,
+  type InstantAccountPaymentRail,
 } from './card-invoice-cycle';
 
 export {
