@@ -72,7 +72,7 @@ export function NewPotSheet({
         <ActionForm
           action={createAccountAction}
           successMessage="Reserva criada"
-          invalidate="settings"
+          invalidate={['settings', 'money']}
           onSuccess={() => setOpen(false)}
           className="grid gap-3"
         >

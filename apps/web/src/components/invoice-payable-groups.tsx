@@ -157,7 +157,7 @@ function InvoiceGroup({
                 invoice.dueOn ? `Vence ${formatIsoDateBr(invoice.dueOn)}` : null,
                 purchaseCount > 0
                   ? `${purchaseCount} ${purchaseCount === 1 ? 'item' : 'itens'}`
-                  : 'Saldo em aberto',
+                  : 'Sem itens detalhados',
               ]
                 .filter(Boolean)
                 .join(' · ')}

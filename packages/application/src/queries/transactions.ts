@@ -23,7 +23,7 @@ import {
   sql,
   sum,
 } from 'drizzle-orm';
-import { resolveCostCenterId, resolveDateRange } from '@tim/domain';
+import { coerceAllowedPaymentRails, resolveCostCenterId, resolveDateRange } from '@tim/domain';
 import { requireSession, can } from '@tim/auth';
 import type { AppContext } from '../context';
 
@@ -204,7 +204,7 @@ export async function loadTransactions(
           id: a.id,
           name: a.name,
           institutionId: a.institutionId,
-          allowedPaymentRails: a.allowedPaymentRails ?? [],
+          allowedPaymentRails: coerceAllowedPaymentRails(a.allowedPaymentRails),
         }));
       })(),
       creditCards: cards.map((card) => ({

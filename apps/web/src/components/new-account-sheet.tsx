@@ -108,7 +108,7 @@ export function NewAccountSheet({
           successMessage={
             selectedCount > 1 || includeCard || includePot ? 'Contas criadas' : 'Conta criada'
           }
-          invalidate="settings"
+          invalidate={['settings', 'money']}
           onSuccess={() => handleOpenChange(false)}
           className="flex flex-1 flex-col gap-4 px-5 py-5"
         >

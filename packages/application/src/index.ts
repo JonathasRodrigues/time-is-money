@@ -29,13 +29,13 @@ import {
   addMonths,
   buildAmortizationSchedule,
   cardHasCredit,
+  coerceAllowedPaymentRails,
   paymentMethodMovesAccountBalance,
   dueOnForMonth,
   rebuildRemainingSchedule,
   shiftYearMonth,
   yearMonthFromIso,
   type AmortizationSystem,
-  type InstantAccountPaymentRail,
 } from '@tim/domain';
 import type {
   CreateCreditCardInput,
@@ -1081,10 +1081,7 @@ export async function payTransaction(ctx: AppContext, raw: PayTransactionInput) 
 
     const paymentRail = input.paymentRail ?? 'pix';
     if (
-      !accountAllowsPaymentRail(
-        account.allowedPaymentRails as InstantAccountPaymentRail[],
-        paymentRail,
-      )
+      !accountAllowsPaymentRail(coerceAllowedPaymentRails(account.allowedPaymentRails), paymentRail)
     ) {
       throw new Error('Forma de pagamento não permitida nesta conta');
     }
@@ -1874,7 +1871,7 @@ export async function payCreditCardInvoice(ctx: AppContext, raw: PayCreditCardIn
     const invoicePaymentRail = input.paymentRail ?? 'pix';
     if (
       !accountAllowsPaymentRail(
-        account.allowedPaymentRails as InstantAccountPaymentRail[],
+        coerceAllowedPaymentRails(account.allowedPaymentRails),
         invoicePaymentRail,
       )
     ) {

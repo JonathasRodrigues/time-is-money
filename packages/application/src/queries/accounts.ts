@@ -1,7 +1,7 @@
 import {
   availableCreditCents,
+  coerceAllowedPaymentRails,
   formatYieldLabel,
-  normalizeAllowedPaymentRails,
   type YieldType,
 } from '@tim/domain';
 import type { AccountsResponse } from '@tim/api-contract';
@@ -115,7 +115,7 @@ export async function loadAccounts(ctx: AppContext): Promise<AccountsResponse> {
           row.yieldType as AccountsResponse['bankSections'][number]['accounts'][number]['yieldType'],
         yieldBps: row.yieldBps,
         yieldLabel: formatYieldLabel(yieldType, row.yieldBps),
-        allowedPaymentRails: normalizeAllowedPaymentRails(row.allowedPaymentRails ?? []),
+        allowedPaymentRails: coerceAllowedPaymentRails(row.allowedPaymentRails),
         isChild,
       };
     });

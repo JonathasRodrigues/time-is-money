@@ -82,7 +82,7 @@ export function EditAccountDialog({
           action={updateAccountAction}
           successMessage="Conta atualizada"
           loadingMessage="Salvando…"
-          invalidate="settings"
+          invalidate={['settings', 'money']}
           onSuccess={() => setOpen(false)}
           className="grid gap-3 sm:grid-cols-2"
         >

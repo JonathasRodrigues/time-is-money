@@ -120,6 +120,24 @@ export function normalizeAllowedPaymentRails(
   return result;
 }
 
+/** Aceita array, JSON string (jsonb) ou unknown vindo do driver. */
+export function coerceAllowedPaymentRails(value: unknown): InstantAccountPaymentRail[] {
+  if (value == null) return [];
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!Array.isArray(parsed)) return [];
+      return normalizeAllowedPaymentRails(parsed.map(String));
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) {
+    return normalizeAllowedPaymentRails(value.map(String));
+  }
+  return [];
+}
+
 export function accountAllowsPaymentRail(
   allowedRails: readonly InstantAccountPaymentRail[],
   paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null | undefined,

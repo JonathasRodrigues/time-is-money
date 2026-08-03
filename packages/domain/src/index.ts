@@ -725,6 +725,7 @@ export {
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
   INSTANT_ACCOUNT_PAYMENT_RAILS,
+  coerceAllowedPaymentRails,
   normalizeAllowedPaymentRails,
   paymentMethodMovesAccountBalance,
   resolveInvoiceCycle,

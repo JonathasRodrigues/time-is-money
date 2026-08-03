@@ -5,7 +5,7 @@ import {
   type CardMode,
   type InstantAccountPaymentRail,
 } from '@tim/domain';
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 /**
  * Sincroniza meios account+rail com a lista permitida da conta.
@@ -20,54 +20,12 @@ export async function syncAccountPaymentMethods(
   },
 ): Promise<void> {
   const rails = normalizeAllowedPaymentRails(input.rails);
+  const allowed = new Set<string>(rails);
   const now = new Date();
 
-  if (rails.length > 0) {
-    await db
-      .insert(paymentMethods)
-      .values(
-        rails.map((rail) => ({
-          householdId: input.householdId,
-          type: 'account' as const,
-          accountId: input.accountId,
-          creditCardId: null,
-          paymentRail: rail,
-          isArchived: false,
-        })),
-      )
-      .onConflictDoNothing({
-        target: [paymentMethods.accountId, paymentMethods.paymentRail],
-      });
-
-    await db
-      .update(paymentMethods)
-      .set({ isArchived: false, updatedAt: now })
-      .where(
-        and(
-          eq(paymentMethods.householdId, input.householdId),
-          eq(paymentMethods.type, 'account'),
-          eq(paymentMethods.accountId, input.accountId),
-          inArray(paymentMethods.paymentRail, rails),
-        ),
-      );
-
-    await db
-      .update(paymentMethods)
-      .set({ isArchived: true, updatedAt: now })
-      .where(
-        and(
-          eq(paymentMethods.householdId, input.householdId),
-          eq(paymentMethods.type, 'account'),
-          eq(paymentMethods.accountId, input.accountId),
-          notInArray(paymentMethods.paymentRail, rails),
-        ),
-      );
-    return;
-  }
-
-  await db
-    .update(paymentMethods)
-    .set({ isArchived: true, updatedAt: now })
+  const existing = await db
+    .select()
+    .from(paymentMethods)
     .where(
       and(
         eq(paymentMethods.householdId, input.householdId),
@@ -75,6 +33,43 @@ export async function syncAccountPaymentMethods(
         eq(paymentMethods.accountId, input.accountId),
       ),
     );
+
+  const byRail = new Map<string, (typeof existing)[number]>();
+  for (const row of existing) {
+    if (row.paymentRail == null) continue;
+    byRail.set(row.paymentRail, row);
+  }
+
+  for (const rail of rails) {
+    const row = byRail.get(rail);
+    if (!row) {
+      await db.insert(paymentMethods).values({
+        householdId: input.householdId,
+        type: 'account',
+        accountId: input.accountId,
+        creditCardId: null,
+        paymentRail: rail,
+        isArchived: false,
+      });
+      continue;
+    }
+    if (row.isArchived) {
+      await db
+        .update(paymentMethods)
+        .set({ isArchived: false, updatedAt: now })
+        .where(eq(paymentMethods.id, row.id));
+    }
+  }
+
+  for (const row of existing) {
+    if (row.paymentRail == null) continue;
+    if (allowed.has(row.paymentRail)) continue;
+    if (row.isArchived) continue;
+    await db
+      .update(paymentMethods)
+      .set({ isArchived: true, updatedAt: now })
+      .where(eq(paymentMethods.id, row.id));
+  }
 }
 
 /**

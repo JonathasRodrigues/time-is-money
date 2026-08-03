@@ -2,15 +2,14 @@ import type { PaymentsQuery, PaymentsResponse } from '@tim/api-contract';
 import {
   availableCreditCents,
   cardHasCredit,
+  coerceAllowedPaymentRails,
   dueOnForMonth,
   estimatePayableCents,
   formatAccountPaymentMethodLabel,
   formatCreditCardPaymentMethodLabel,
-  normalizeAllowedPaymentRails,
   resolvePayableKind,
   suggestAverageAmountCents,
   yearMonthFromIso,
-  type InstantAccountPaymentRail,
 } from '@tim/domain';
 import {
   accounts,
@@ -28,7 +27,7 @@ import { requireSession } from '@tim/auth';
 import type { AppContext } from '../context';
 import {
   closeDueCreditCardInvoices,
-  INVOICE_OPENING_DESCRIPTION,
+  INVOICE_OPENING_SOURCE,
   sumInvoiceBalanceCents,
 } from '../card-invoices';
 import { ensureAccountPaymentMethods, ensureCreditCardPaymentMethod } from '../payment-methods';
@@ -280,14 +279,15 @@ export async function loadPayments(
       };
     });
 
-  // Garante formas persistidas conforme allowedPaymentRails de cada conta.
+  // Sincroniza payment_methods com allowed_payment_rails de cada conta.
   for (const account of accs) {
     if (account.isArchived) continue;
+    const rails = coerceAllowedPaymentRails(account.allowedPaymentRails);
     await ensureAccountPaymentMethods(db, {
       householdId: session.householdId,
       accountId: account.id,
       kind: account.kind,
-      rails: account.allowedPaymentRails ?? [],
+      rails,
     });
   }
   for (const card of cards) {
@@ -310,67 +310,67 @@ export async function loadPayments(
       ),
     );
 
-  const tableAccountIds = new Set(tableAccounts.map((a) => a.id));
-  const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = methodRows
-    .filter((method) => {
-      if (method.type === 'account') {
-        if (!tableAccountIds.has(method.accountId)) return false;
-        const account = accountMap.get(method.accountId);
-        const allowed = new Set(normalizeAllowedPaymentRails(account?.allowedPaymentRails ?? []));
-        return (
-          method.paymentRail != null && allowed.has(method.paymentRail as InstantAccountPaymentRail)
-        );
-      }
-      if (flow !== 'pay') return false;
-      return (
-        method.creditCardId != null &&
-        cardHasCredit(cards.find((c) => c.id === method.creditCardId)?.cardMode ?? 'debit')
-      );
-    })
-    .map((method) => {
-      if (method.type === 'credit_card' && method.creditCardId) {
-        const card = creditCardsLookup.find((c) => c.id === method.creditCardId);
-        return {
-          id: method.id,
-          type: 'credit_card' as const,
-          accountId: method.accountId,
-          creditCardId: method.creditCardId,
-          paymentRail: null as 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null,
-          linkedAccountName: card?.linkedAccountName ?? null,
-          linkedInstitutionName: card?.linkedInstitutionName ?? null,
-          balanceCents: card?.availableCents ?? null,
-          label: card?.label ?? 'Crédito',
-        };
-      }
-      const account = accountMap.get(method.accountId);
-      const institutionName = account?.institutionId
-        ? (institutionMap.get(account.institutionId) ?? null)
-        : null;
-      const rail =
-        method.paymentRail === 'pix' ||
-        method.paymentRail === 'debit' ||
-        method.paymentRail === 'ted' ||
-        method.paymentRail === 'boleto' ||
-        method.paymentRail === 'cash' ||
-        method.paymentRail === 'other'
-          ? method.paymentRail
-          : null;
-      return {
+  const methodByAccountRail = new Map<string, (typeof methodRows)[number]>();
+  const creditCardMethods: typeof methodRows = [];
+  for (const method of methodRows) {
+    if (method.type === 'credit_card') {
+      creditCardMethods.push(method);
+      continue;
+    }
+    if (method.type !== 'account' || method.paymentRail == null) continue;
+    methodByAccountRail.set(`${method.accountId}:${method.paymentRail}`, method);
+  }
+
+  const paymentMethods: PaymentsResponse['lookups']['paymentMethods'] = [];
+
+  // Só rails escolhidos em allowed_payment_rails — nunca “os 4” da tabela.
+  for (const account of accs) {
+    if (account.isArchived && !pendingAccountIds.has(account.id)) continue;
+    const rails = coerceAllowedPaymentRails(account.allowedPaymentRails);
+    const institutionName = account.institutionId
+      ? (institutionMap.get(account.institutionId) ?? null)
+      : null;
+    for (const rail of rails) {
+      const method = methodByAccountRail.get(`${account.id}:${rail}`);
+      if (!method) continue;
+      paymentMethods.push({
         id: method.id,
-        type: 'account' as const,
-        accountId: method.accountId,
+        type: 'account',
+        accountId: account.id,
         creditCardId: null,
         paymentRail: rail,
-        linkedAccountName: account?.name ?? 'Conta',
+        linkedAccountName: account.name,
         linkedInstitutionName: institutionName,
-        balanceCents: account?.balanceCents ?? 0,
+        balanceCents: account.balanceCents,
         label: formatAccountPaymentMethodLabel({
-          accountName: account?.name ?? 'Conta',
+          accountName: account.name,
           institutionName,
           paymentRail: rail,
         }),
-      };
-    });
+      });
+    }
+  }
+
+  if (flow === 'pay') {
+    for (const method of creditCardMethods) {
+      if (method.creditCardId == null) continue;
+      if (!cardHasCredit(cards.find((c) => c.id === method.creditCardId)?.cardMode ?? 'debit')) {
+        continue;
+      }
+      const card = creditCardsLookup.find((c) => c.id === method.creditCardId);
+      paymentMethods.push({
+        id: method.id,
+        type: 'credit_card',
+        accountId: method.accountId,
+        creditCardId: method.creditCardId,
+        paymentRail: null,
+        linkedAccountName: card?.linkedAccountName ?? null,
+        linkedInstitutionName: card?.linkedInstitutionName ?? null,
+        balanceCents: card?.availableCents ?? null,
+        label: card?.label ?? 'Crédito',
+      });
+    }
+  }
 
   let cardInvoice: PaymentsResponse['cardInvoice'] = null;
 
@@ -421,6 +421,7 @@ export async function loadPayments(
             occurredOn: transactions.occurredOn,
             paidOn: transactions.paidOn,
             amountCents: transactions.amountCents,
+            source: transactions.source,
           })
           .from(transactions)
           .where(
@@ -433,35 +434,38 @@ export async function loadPayments(
           )
           .orderBy(asc(transactions.paidOn), asc(transactions.occurredOn));
 
-        const purchases = purchaseLines.map((line) => {
-          const paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null =
-            line.paymentRail === 'pix' ||
-            line.paymentRail === 'debit' ||
-            line.paymentRail === 'ted' ||
-            line.paymentRail === 'boleto' ||
-            line.paymentRail === 'cash' ||
-            line.paymentRail === 'other'
-              ? line.paymentRail
-              : null;
-          return {
-            id: line.id,
-            description: line.description,
-            kind: resolvePayableKind({
-              seriesId: line.seriesId,
-              installmentId: line.installmentId,
-            }),
-            costCenterId: line.costCenterId,
-            costCenterName: centerMap.get(line.costCenterId) ?? '—',
-            categoryId: line.categoryId,
-            categoryName: catMap.get(line.categoryId) ?? 'Categoria',
-            accountId: line.accountId,
-            paymentRail,
-            creditCardId: line.creditCardId,
-            creditCardInvoiceId: line.creditCardInvoiceId,
-            occurredOn: line.paidOn ?? line.occurredOn,
-            amountCents: line.amountCents ?? 0,
-          };
-        });
+        // Saldo inicial do cadastro não é "item" — só compras reais entram na tabela.
+        const purchases = purchaseLines
+          .filter((line) => line.source !== INVOICE_OPENING_SOURCE)
+          .map((line) => {
+            const paymentRail: 'pix' | 'debit' | 'ted' | 'boleto' | 'cash' | 'other' | null =
+              line.paymentRail === 'pix' ||
+              line.paymentRail === 'debit' ||
+              line.paymentRail === 'ted' ||
+              line.paymentRail === 'boleto' ||
+              line.paymentRail === 'cash' ||
+              line.paymentRail === 'other'
+                ? line.paymentRail
+                : null;
+            return {
+              id: line.id,
+              description: line.description,
+              kind: resolvePayableKind({
+                seriesId: line.seriesId,
+                installmentId: line.installmentId,
+              }),
+              costCenterId: line.costCenterId,
+              costCenterName: centerMap.get(line.costCenterId) ?? '—',
+              categoryId: line.categoryId,
+              categoryName: catMap.get(line.categoryId) ?? 'Categoria',
+              accountId: line.accountId,
+              paymentRail,
+              creditCardId: line.creditCardId,
+              creditCardInvoiceId: line.creditCardInvoiceId,
+              occurredOn: line.paidOn ?? line.occurredOn,
+              amountCents: line.amountCents ?? 0,
+            };
+          });
 
         const paymentAccount = accountMap.get(card.paymentAccountId);
         const cardLabel = card.lastFour ? `${card.name} ·••• ${card.lastFour}` : card.name;
@@ -516,26 +520,8 @@ export async function loadPayments(
             creditCardId: card.id,
             creditCardInvoiceId: null,
             creditCardName: card.name,
-            purchaseCount: 1,
-            purchases: [
-              {
-                id: card.id,
-                description: INVOICE_OPENING_DESCRIPTION,
-                kind: 'variable' as const,
-                costCenterId: paymentAccount?.costCenterId ?? null,
-                costCenterName: paymentAccount
-                  ? (centerMap.get(paymentAccount.costCenterId) ?? '—')
-                  : '—',
-                categoryId: null,
-                categoryName: 'Fatura de cartão',
-                accountId: card.paymentAccountId,
-                paymentRail: null,
-                creditCardId: card.id,
-                creditCardInvoiceId: null,
-                occurredOn: dueOn,
-                amountCents: card.invoiceBalanceCents,
-              },
-            ],
+            purchaseCount: 0,
+            purchases: [],
           });
         }
       }
