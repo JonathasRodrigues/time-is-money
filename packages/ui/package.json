@@ -15,7 +15,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^0.483.0",
+    "lucide-react": "^0.577.0",
     "tailwind-merge": "^3.0.2"
   },
   "peerDependencies": {
@@ -23,7 +23,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.10",
+    "@types/react": "^19.2.18",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   }
