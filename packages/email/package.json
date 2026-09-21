@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@react-email/components": "^0.0.34",
-    "react": "^19.0.0",
+    "react": "^19.3.0",
     "resend": "^4.1.2"
   },
   "devDependencies": {
-    "@types/react": "^19.0.10",
+    "@types/react": "^19.3.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   }
